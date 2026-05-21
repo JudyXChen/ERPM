@@ -1,6 +1,4 @@
 """Cyto Ca buffers -- mobile B_m, fixed B_f, lumped k_d decay (Bell).
-
-**** OPEN ISSUE: Bell uses B_m+B_f OR k_d, not both simultaneously. 
 """
 
 from smart.model_assembly import Parameter, Reaction, Species

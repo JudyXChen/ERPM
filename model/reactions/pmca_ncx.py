@@ -29,13 +29,6 @@ def register(p):
 
     pm = "PM"
 
-    # PMCA/NCX states are occupancy fractions; scale the Ca_c coupling to
-    # the per-spine pump population: S_X = N_X/(N_A*V_spine_L) (same
-    # convention as Bf_total/RyR/SERCA). Markov steps keep ±1.
-    # k_P_leak/k_NCX_leak are bulk PM leaks ("optim." placeholders) -- scaled
-    # by the same S_X so they compose dimensionally with the bind step;
-    # their *values* are re-tuned in the final resting-balance step.
-    # See doc/flux_units_plan.md.
     S_PMCA = float(p.N_PMCA) / (float(p.N_A) * float(p.V_spine_L))
     S_NCX = float(p.N_NCX) / (float(p.N_A) * float(p.V_spine_L))
 

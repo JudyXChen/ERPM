@@ -48,20 +48,10 @@ def register(p):
         Parameter("k_IP3R_flux", p.k_IP3R_flux, dimensionless),
     ]
 
-    # IPR states are occupancy fractions; every bulk-concentration species
-    # they couple to (Ca_c, IP3) must be scaled to the per-spine IP3R
-    # population: S_IP3R = N_IP3R/(N_A*V_spine_L) (same convention as
-    # Bf_total/RyR). Applied as per-species flux_scaling on the bulk species
-    # only, so the Markov transitions are unscaled. See
-    # doc/flux_units_plan.md.
     S_IP3R = float(p.N_IP3R) / (float(p.N_A) * float(p.V_spine_L))
     V_ratio = float(p.V_spine) / float(p.V_ER)
 
-    # Helper for Reaction objects with consistent compartment + species_map.
-    # Bulk species (Ca_c, IP3, Ca_ER) coupled to the fraction-valued IPR
-    # states are auto-scaled by S_IP3R (Ca_ER additionally by V_ratio for
-    # the smaller ER volume), so every gating/flux reaction is consistent.
-    def _rx(name, lhs, rhs, kf, kr, eqn_f, eqn_r, smap):
+     def _rx(name, lhs, rhs, kf, kr, eqn_f, eqn_r, smap):
         fs = {}
         if "Ca_c" in smap:
             fs["Ca_c"] = S_IP3R
@@ -121,10 +111,7 @@ def register(p):
         _rx("IP3R_J12", ["IPR_101"], ["IPR_111"],
             "a5", "b5", "kf*Ca_c*IPR_101", "kr*IPR_111",
             {"IPR_101": "IPR_101", "IPR_111": "IPR_111", "Ca_c": "Ca_c"}),
-        # Ca flux through the open state IPR_110. IPR_110 is an occupancy
-        # fraction; convert to open-IP3R concentration via
-        # S_IP3R = N_IP3R/(N_A*V_spine_L) on the Ca_c/Ca_ER coupling only
-        # (same convention as RyR/Bf_total). See doc/flux_units_plan.md.
+
         Reaction(
             "IP3R_flux",
             ["Ca_ER"], ["Ca_c"],

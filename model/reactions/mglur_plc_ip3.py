@@ -10,9 +10,6 @@ D_unit = um**2 / sec
 
 def register(p):
     species = [
-        # Cyto-shared species 
-        # Glu initial value = stimulus bolus (default 0 -> no stimulus,
-        # preserves the resting/steady-state test). Set via stimulus.py.
         Species("Glu", float(getattr(p, "Glu_init", 0.0)),
                 dimensionless, 0.0, D_unit, "Cyto"),
         Species("IP3", float(getattr(p, "IP3_basal", 0.0)),
@@ -127,16 +124,7 @@ def register(p):
                 "PLC_Ca": "PLC_Ca", "PLC_Ca_PIP2": "PLC_Ca_PIP2", "IP3": "IP3",
             },
         ),
-        # IP3 first-order degradation (IP3 5-phosphatase / 3-kinase are
-        # first-order in IP3). NOTE: the documented Singh-2021 form was
-        # k_deg*(IP3 - IP3_basal) ("relaxation to basal"), which contributes
-        # ZERO at IP3=IP3_basal and therefore cannot balance the
-        # (intended, Ca-driven) basal PLC->IP3 production -> IP3 drifts up
-        # without bound. Changed to a true first-order sink k_deg*IP3 so a
-        # genuine resting fixed point exists; k_deg is then re-derived
-        # (model.ode0d --calibrate-leaks) so the steady-state IP3 equals the
-        # physiological basal level. See doc/flux_units_plan.md. PI-review
-        # item (deliberate, defensible reformulation).
+
         Reaction(
             "IP3_decay", ["IP3"], [],
             param_map={"k": "k_deg"},
@@ -145,13 +133,6 @@ def register(p):
         ),
     ]
 
-    # mGluR and PLC species are occupancy fractions (mGluR_total=PLC_total=
-    # 1.0). Every bulk species they couple to (Glu, IP3 via mGluR catalysis;
-    # Ca_c, IP3 via PLC) must be scaled to the per-spine enzyme population:
-    # S_mGluR = N_mGluR/(N_A*V_spine_L), S_PLC = N_PLC/(N_A*V_spine_L) (same
-    # convention as Bf_total). Markov/state transitions stay unscaled.
-    # IP3_decay is a pure bulk first-order term (no fraction) -> unscaled.
-    # See doc/flux_units_plan.md.
     S_mGluR = float(p.N_mGluR) / (float(p.N_A) * float(p.V_spine_L))
     S_PLC = float(p.N_PLC) / (float(p.N_A) * float(p.V_spine_L))
     _bulk = {"Glu", "IP3", "Ca_c"}

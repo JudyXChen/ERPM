@@ -7,7 +7,6 @@ um = unit.micrometer
 dimensionless = unit.dimensionless
 D_unit = um**2 / sec
 
-
 _MACROS = ("C", "O", "CI", "OI")  # m = 0, 1, 2, 3
 
 
@@ -45,15 +44,6 @@ def register(p):
 
     reactions = []
 
-    # RyR states are occupancy fractions (all 100 sum to 1). EVERY reaction
-    # that couples a fraction to a real concentration -- the gating Ca_c
-    # binding steps (activation/inactivation) AND the CICR flux -- must
-    # convert the fraction to a per-spine open/binding-site concentration
-    # via S_RyR = N_RyR/(N_A*V_spine_L) (same convention as Bf_total).
-    # Applied as per-species flux_scaling on Ca_c/Ca_ER ONLY, so the Markov
-    # transitions (the fractions) are unscaled. Physically this makes the
-    # ~N_RyR gating sites deplete negligible bulk Ca, as they should.
-    # See doc/flux_units_plan.md.
     S_RyR = float(p.N_RyR) / (float(p.N_A) * float(p.V_spine_L))
     V_ratio = float(p.V_spine) / float(p.V_ER)
 
@@ -201,13 +191,6 @@ def register(p):
                 )
             )
 
-    # CICR Ca flux: Ca_ER <-> Ca_c.  The O-state species are occupancy
-    # *fractions* (all 100 RyR states sum to 1); k_RyR (M^-1 s^-1, Singh
-    # 2021) expects an open-RyR *concentration*. Convert via
-    # S_RyR = N_RyR/(N_A*V_spine_L) -- same convention as Bf_total. Applied
-    # as per-species flux_scaling on Ca_c/Ca_ER only, so the gradient form
-    # is unchanged and no Markov state is rescaled. See
-    # doc/flux_units_plan.md.
     open_states = [_state_name("O", ja, ji) for ja in range(5) for ji in range(5)]
     open_sum = " + ".join(open_states)
     species_map = {n: n for n in open_states}

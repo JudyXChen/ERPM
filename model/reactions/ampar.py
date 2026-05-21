@@ -111,10 +111,7 @@ def register(p):
             explicit_restriction_to_domain=pm,
         ),
     ]
-
-    # AMPAR states are occupancy fractions; scale the Glu consumed by the
-    # Glu-binding steps to the per-spine AMPAR population
-    # (S_AMPAR = N_AMPAR/(N_A*V_spine_L)). See doc/flux_units_plan.md.
+    
     S_AMPAR = float(p.N_AMPAR) / (float(p.N_A) * float(p.V_spine_L))
     for r in reactions:
         if "Glu" in (r.species_map or {}):

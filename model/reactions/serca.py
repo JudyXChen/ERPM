@@ -36,14 +36,6 @@ def register(p):
 
     erm = "ERm"
 
-    # SERCA states are occupancy fractions; the Ca_c consumed (binding) and
-    # Ca_ER released (pumping) must be scaled to the per-spine SERCA
-    # population: S_SERCA = N_SERCA/(N_A*V_spine_L) -- same convention as
-    # Bf_total/RyR. Applied via per-species flux_scaling on Ca_c/Ca_ER ONLY,
-    # so the 6-state Markov cycle (the fractions) evolves unchanged.
-    # k_S_leak is a bulk ER leak (s^-1, not per-SERCA) -- left structural,
-    # re-tuned to balance SERCA at rest in the final calibration step.
-    # See doc/flux_units_plan.md.
     S_SERCA = float(p.N_SERCA) / (float(p.N_A) * float(p.V_spine_L))
     V_ratio = float(p.V_spine) / float(p.V_ER)
 

@@ -116,17 +116,7 @@ def register(p):
             species_map={"R2B": "R2B", "RB": "RB"},
             explicit_restriction_to_domain=pm,
         ),
-        # Ca2+ entry through the open state. V_m AND V_r_N are both in mV
-        # (Bell 2022 convention, matching the Mg-block 17/47 mV constants
-        # and VSCC gating Vc constants -- the rest of the model uses V_m
-        # in mV too). gamma_N = 4.5e-15 (Bell 2022 Table 2) thus carries
-        # units of A/mV, so gamma_N*(V_m-V_r_N) is in A and dividing by
-        # 2*q_e gives Ca2+ ions/s per channel x open fraction R. At
-        # V_m=-27 mV (bAP peak) the result matches HM's MCell
-        # nmdar_rate_scaled within 2x. Bulk d[Ca_c]/dt comes from
-        # flux_scaling = N_NMDAR/(N_A*V_spine_L) -- same convention as
-        # Bf_total. PREVIOUS BUG (fixed 2026-05-20): had V_m*1e-3 here
-        # which silently divided the per-channel Ca flux by 1000.
+
         Reaction(
             "N_Ca_entry", [], ["Ca_c"],
             param_map={
@@ -145,11 +135,6 @@ def register(p):
         ),
     ]
 
-    # NMDAR states are occupancy fractions; the Glu consumed by the
-    # Glu-binding steps must be scaled to the per-spine NMDAR population
-    # (S_NMDAR = N_NMDAR/(N_A*V_spine_L)) -- otherwise ~6 receptors drain
-    # the bulk Glu pool unphysically. Markov transitions stay unscaled.
-    # See doc/flux_units_plan.md.
     S_NMDAR = float(p.N_NMDAR) / (float(p.N_A) * float(p.V_spine_L))
     for r in reactions:
         if "Glu" in (r.species_map or {}):

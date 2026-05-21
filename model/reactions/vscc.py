@@ -1,13 +1,3 @@
-"""VSCC -- 5-state Bartol gating + GHK Ca flux through V4 (open) on PM.
-
-V0..V3 closed; V4 open. Forward rates exp(+V/V_const_i), reverse
-exp(-V/V_const_i) (the Table-5 +V/+V form would make equilibrium V-
-independent and is treated as a typo). GHK denominator guarded against
-V=0 with a tiny offset baked into eqn_f_str.
-
-Ca flux through V4 = gamma_VSCC * N_A / (2*F_const) * GHK(V) * V4.
-"""
-
 from smart.model_assembly import Parameter, Reaction, Species
 from smart.units import unit
 
@@ -93,8 +83,6 @@ def register(p):
             species_map={"V3": "V3", "V4": "V4"},
             explicit_restriction_to_domain=pm,
         ),
-        # GHK Ca flux into Cyto. The +1e-9 offset on V_m guards the GHK
-        # denominator at V=0; the small offset has negligible effect off zero.
         Reaction(
             "V_Ca_entry", [], ["Ca_c"],
             param_map={
@@ -109,9 +97,7 @@ def register(p):
                 "/(1.0 - exp(-(V_m + 1e-9)/80.36)))*V4"
             ),
             species_map={"V4": "V4", "Ca_c": "Ca_c"},
-            # gamma_VSCC*N_A/(2F) = gamma/(2*q_e) = Ca ions/s per channel x
-            # open fraction V4. Scale to the per-spine VSCC population /
-            # cytosol volume: S_VSCC = N_VSCC/(N_A*V_spine_L).
+            
             flux_scaling={
                 "Ca_c": float(p.N_VSCC)
                 / (float(p.N_A) * float(p.V_spine_L))
