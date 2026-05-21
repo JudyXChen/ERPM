@@ -93,8 +93,8 @@ def register(p):
             },
             eqn_f_str=(
                 "gamma_VSCC*N_A/(2.0*F_const)"
-                "*((0.393 - exp(-(V_m + 1e-9)/80.36))"
-                "/(1.0 - exp(-(V_m + 1e-9)/80.36)))*V4"
+                "*((0.393 - exp(-V_m/80.36))"
+                "/(1.0 - exp(-V_m/80.36)))*V4"
             ),
             species_map={"V4": "V4", "Ca_c": "Ca_c"},
             

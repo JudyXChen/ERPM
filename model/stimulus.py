@@ -21,7 +21,7 @@ def resolve_glu(glu, p):
     return float(glu)
 
 
-def hold_voltage(V_mV=-70.0):
+def hold_voltage(V_mV=-65.0):
     return float(V_mV)
 
 
@@ -57,7 +57,7 @@ def bap_voltage_expr(
     return float(V_rest) + EPSP + BPAP
 
 
-def apply(p, *, glu="glut_release", voltage=-70.0):
+def apply(p, *, glu="glut_release", voltage=-65.0):
     """Set the glutamate release on ``p`` and return the voltage expression."""
     p.Glu_init = resolve_glu(glu, p)
     return voltage

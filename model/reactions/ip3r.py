@@ -51,7 +51,7 @@ def register(p):
     S_IP3R = float(p.N_IP3R) / (float(p.N_A) * float(p.V_spine_L))
     V_ratio = float(p.V_spine) / float(p.V_ER)
 
-     def _rx(name, lhs, rhs, kf, kr, eqn_f, eqn_r, smap):
+    def _rx(name, lhs, rhs, kf, kr, eqn_f, eqn_r, smap):
         fs = {}
         if "Ca_c" in smap:
             fs["Ca_c"] = S_IP3R
