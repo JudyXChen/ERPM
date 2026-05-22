@@ -115,7 +115,7 @@ def default_parameters():
         k_y2y1=60.04, k_y1y2=6.0,
         k_y1y0=30.02, k_y0y1=12.0,
         k_y0x0=0.4, k_x0y0=1.2e-3,
-        # Leak-only calibration with RyR/IP3R release fluxes disabled:
+        # Leak calibration:
         k_S_leak=0.1608,
 
         # RyR (Table 6, Tanskanen 2007 / Singh 2021)

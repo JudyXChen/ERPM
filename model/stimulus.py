@@ -38,8 +38,8 @@ def bap_voltage_expr(
     tdelay=0.0,
     tep1=0.05,
     tep2=0.005,
-    causal=False,
 ):
+    """Return the causal bAP/EPSP voltage transient."""
     t = sym.Symbol("t")
     te = t - t_stim - tdelay      # time since EPSP onset
     tb = t - t_stim - tdelaybp    # time since bAP onset
@@ -49,11 +49,7 @@ def bap_voltage_expr(
         Ibsf * sym.exp(-tb / tbsf) + Ibss * sym.exp(-tb / tbss)
     )
     EPSP = sym.Piecewise((0.0, te < 0), (EPSP_raw, True))
-    BPAP = (
-        sym.Piecewise((0.0, tb < 0), (BPAP_raw, True))
-        if causal
-        else BPAP_raw
-    )
+    BPAP = sym.Piecewise((0.0, tb < 0), (BPAP_raw, True))
     return float(V_rest) + EPSP + BPAP
 
 

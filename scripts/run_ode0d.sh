@@ -1,0 +1,2 @@
+conda run -n erpm python -m model.ode0d --bap --glu glut_release --final-t 0.5 --n-points 2000 --out results/ode0d_bap_glut
+conda run -n erpm python scripts/plot_ode0d.py results/ode0d_bap_glut --t-min-ms 0 --t-max-ms 200

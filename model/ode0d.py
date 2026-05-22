@@ -214,10 +214,8 @@ def rhs(t, y, compiled, vfun):
 
 
 def run(glu="glut_release", voltage=-70.0, final_t=0.5, out="results/ode0d",
-        n_points=200, method="BDF", causal_bap=False):
+        n_points=200, method="BDF"):
     p = default_parameters()
-    if isinstance(voltage, sym.Expr) and causal_bap:
-        voltage = stimulus.bap_voltage_expr(causal=True)
     volt = stimulus.apply(p, glu=glu, voltage=voltage)
     names, y0, compiled, _ = build_system(p)
     vfun = _make_voltage(volt)
@@ -257,12 +255,8 @@ def main(argv=None):
     ap.add_argument("--glu", default="glut_release")
     ap.add_argument("--voltage", type=float, default=-70.0)
     ap.add_argument("--bap", action="store_true",
-                    help="use the V_rest+BPAP+EPSP transient "
-                         "(stimulus.bap_voltage_expr) instead of the "
-                         "constant --voltage clamp")
-    ap.add_argument("--causal-bap", action="store_true",
-                    help="with --bap, gate BPAP to zero before tdelaybp; "
-                         "default reproduces the cited paper equation/plot")
+                    help="use the causal V_rest+BPAP+EPSP transient instead "
+                         "of the constant --voltage clamp")
     ap.add_argument("--final-t", type=float, default=0.5, dest="final_t")
     ap.add_argument("--n-points", type=int, default=200, dest="n_points")
     ap.add_argument("--method", default="BDF")
@@ -271,12 +265,11 @@ def main(argv=None):
     glu = None if a.glu == "none" else a.glu
     # bAP transient (sympy expr in t) overrides the scalar --voltage clamp.
     voltage = (
-        stimulus.bap_voltage_expr(causal=a.causal_bap)
+        stimulus.bap_voltage_expr()
         if a.bap else a.voltage
     )
     run(glu=glu, voltage=voltage, final_t=a.final_t, out=a.out,
-        n_points=a.n_points, method=a.method,
-        causal_bap=a.causal_bap)
+        n_points=a.n_points, method=a.method)
 
 
 if __name__ == "__main__":
