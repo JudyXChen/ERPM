@@ -1,59 +1,63 @@
+"""Stimulus
+"""
+
 import sympy as sym
 
 
-# Glutamate release size used by HM / ODE_MODEL_PLAN.md.
-GLUT_RELEASE_MOLECULES = 500.0
+# Default single-bolus size (molecules) released at the PSD.
+GLUT_BOLUS_MOLECULES = 500.0
 
 
-def glu_bolus_from_molecules(n_molecules, p):
-    """Concentration (M) for ``n_molecules`` released into the spine volume. """
+# ---------------------------------------------------------------------------
+# 1. Glutamate release train
+# ---------------------------------------------------------------------------
+def molecules_to_conc(n_molecules, p):
+    """Spine concentration (M) for ``n_molecules`` released into V_spine."""
     return float(n_molecules) / (p.N_A * p.V_spine_L)
 
 
-def resolve_glu(glu, p):
-    """Map a ``glu`` argument to a concentration in M."""
-    if glu is None:
-        return 0.0
-    if isinstance(glu, str):
-        if glu == "glut_release":
-            return glu_bolus_from_molecules(GLUT_RELEASE_MOLECULES, p)
-        raise ValueError(f"unknown glu protocol {glu!r}")
-    return float(glu)
+def release_times(frequency_hz=1.0, n_pulses=1, t_stim=0.0):
+    """Glutamate release times (s): ``t_stim, t_stim+1/f, ...`` (``n_pulses``).
+    """
+    dt = 1.0 / float(frequency_hz)
+    return [t_stim + k * dt for k in range(int(n_pulses))] 
+
+
+# ---------------------------------------------------------------------------
+# 2. Voltage: V_rest + EPSP + bAP centred on release time
+# ---------------------------------------------------------------------------
+def voltage(times=(0.0,), V_rest=-65.0, tdelaybp=2e-3,
+            tbss=25e-3, tbsf=3e-3, Ibsf=0.75, Ibss=0.25,
+            maxBPAP=38.0, s_term=25.0, tep1=0.05, tep2=0.005,
+            sum_pulses=False):
+
+    t = sym.Symbol("t")
+    v = sym.Float(V_rest)
+    for t0 in times:
+        te = t - t0                # time since EPSP onset (= release time)
+        tb = t - t0 - tdelaybp     # time since bAP onset
+        EPSP = sym.Piecewise(
+            (0.0, te < 0),
+            (s_term * (sym.exp(-te / tep1) - sym.exp(-te / tep2)), True))
+        BPAP = sym.Piecewise(
+            (0.0, tb < 0),
+            (maxBPAP * (Ibsf * sym.exp(-tb / tbsf)
+                        + Ibss * sym.exp(-tb / tbss)), True))
+        pulse_v = EPSP + BPAP
+        if sum_pulses:
+            v += pulse_v
+        else:
+            v = sym.Piecewise((v, te < 0), (sym.Float(V_rest) + pulse_v, True))
+    return v
 
 
 def hold_voltage(V_mV=-65.0):
     return float(V_mV)
 
 
-def bap_voltage_expr(
-    t_stim=0.0,
-    V_rest=-65.0,
-    tdelaybp=2e-3,
-    tbss=25e-3,
-    tbsf=3e-3,
-    Ibsf=0.75,
-    Ibss=0.25,
-    maxBPAP=38.0,
-    s_term=25,
-    tdelay=0.0,
-    tep1=0.05,
-    tep2=0.005,
-):
-    """Return the causal bAP/EPSP voltage transient."""
-    t = sym.Symbol("t")
-    te = t - t_stim - tdelay      # time since EPSP onset
-    tb = t - t_stim - tdelaybp    # time since bAP onset
-
-    EPSP_raw = s_term * (sym.exp(-te / tep1) - sym.exp(-te / tep2))
-    BPAP_raw = maxBPAP * (
-        Ibsf * sym.exp(-tb / tbsf) + Ibss * sym.exp(-tb / tbss)
-    )
-    EPSP = sym.Piecewise((0.0, te < 0), (EPSP_raw, True))
-    BPAP = sym.Piecewise((0.0, tb < 0), (BPAP_raw, True))
-    return float(V_rest) + EPSP + BPAP
-
-
-def apply(p, *, glu="glut_release", voltage=-65.0):
-    """Set the glutamate release on ``p`` and return the voltage expression."""
-    p.Glu_init = resolve_glu(glu, p)
-    return voltage
+def voltage_onsets(times, tdelaybp=2e-3):
+    onsets = []
+    for t0 in times:
+        onsets.append(float(t0))
+        onsets.append(float(t0) + tdelaybp)
+    return sorted(set(onsets))

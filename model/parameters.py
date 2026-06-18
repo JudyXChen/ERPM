@@ -47,10 +47,10 @@ def default_parameters():
         Bf_total=Bf_total,
         mGluR_total=1.0,
         PLC_total=1.0,
-        glu_clearance_rate=100.0,
+        glu_clearance_rate=200.0,
         Glu_init=0.0,
         N_NMDAR=35.0,
-        N_VSCC=2.0, # check
+        N_VSCC=1.0, # check
         N_PMCA=7165.0,
         N_NCX=1019.0,
         N_SERCA=1284.0,
@@ -106,7 +106,9 @@ def default_parameters():
         # SOCE 
         K_STIM1=200.0e-6,
         tau_STIM1=0.01,
-        g_Orai1=4.752e-15, # S/um2, check unit
+        w_STIM1=1.0,
+        N_Orai1=20.0,
+        g_Orai1=4.752e-15, # single-channel conductance, S
 
         # SERCA (Table 6, Bartol 2015)
         k_x0x1=2.0e8, k_x1x0=83.7,

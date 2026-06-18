@@ -10,11 +10,11 @@ from . import (
     pmca_ncx,
     ryr,
     serca,
-    soce,  # imported but NOT registered.
+    soce,
     vscc,
 )
 
-REGISTRARS = (
+BASE_REGISTRARS = (
     nmdar.register,
     ampar.register,
     vscc.register,
@@ -25,6 +25,9 @@ REGISTRARS = (
     buffers.register,
     mglur_plc_ip3.register,
 )
+
+SOCE_REGISTRARS = BASE_REGISTRARS + (soce.register,)
+REGISTRARS = BASE_REGISTRARS
 
 __all__ = [
     "ampar",
@@ -37,5 +40,7 @@ __all__ = [
     "serca",
     "soce",
     "vscc",
+    "BASE_REGISTRARS",
+    "SOCE_REGISTRARS",
     "REGISTRARS",
 ]

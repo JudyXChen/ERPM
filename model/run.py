@@ -1,28 +1,8 @@
-"""Entry point: run the well-mixed ODE model under a stimulus and save traces.
-
-Run inside the SMART Docker container (see README), from the repo root::
-
-    python -m model.run --glu glut_release --voltage -70 --final-t 0.5 \
-        --out results/hm_constant
-
-This first protocol is the HM-consistent **glutamate-only** test at a
-constant voltage clamp (ODE_MODEL_PLAN.md default): a glutamate bolus is
-released at t=0 with first-order clearance, V_m held constant. With V_m at
-rest the NMDAR Mg2+ block is largely intact, so the expected Ca2+ response
-is modest -- this validates the chemistry before adding the bAP transient.
-
-Outputs: ``<out>/traces.csv`` (time + spine-mean of every species) and a
-printed summary (resting vs peak Ca_c, ER Ca2+ drop).
-"""
-
 import argparse
 import csv
 import pathlib
 import sys
 
-# The 100-state RyR expansion (~240 reactions; cf. doc/CLAUDE.md) makes the
-# Cyto Ca_c residual a very deep UFL Sum tree; FEniCS form compilation
-# recurses through ufl_shape and overflows Python's default 1000 limit.
 sys.setrecursionlimit(100_000)
 
 from .ode_system import build_model
@@ -31,14 +11,7 @@ from . import stimulus
 
 
 def _scalar(species):
-    """Spine-mean of ONE species.
 
-    `species.u["u"]` is the whole *compartment* mixed function (size =
-    n_species_on_compartment x n_vertices); a plain .mean() averages across
-    all species on that compartment (the per-compartment artifact bug).
-    `species.dof_map` gives this species' DOF indices within that vector;
-    well-mixed -> the sub-field is ~uniform so its mean is exact.
-    """
     try:
         import numpy as np
 
@@ -50,17 +23,26 @@ def _scalar(species):
         return float("nan")
 
 
-def run(glu="glut_release", voltage=-70.0, final_t=0.5, out="results/hm_constant",
-        initial_dt=1e-4, outer_radius=0.25, inner_radius=0.1, h_edge=0.05):
+def run(glu="glut_release", v_rest=-65.0, clamp_mV=None, final_t=0.5,
+        out="results/hm_constant", initial_dt=1e-4, outer_radius=0.25,
+        inner_radius=0.1, h_edge=0.05):
     p = default_parameters()
-    voltage_expr = stimulus.apply(p, glu=glu, voltage=voltage)
 
-    # Step-1 physics is 0D (every species D=0), but FEniCS still needs the
-    # nested-sphere mesh resolved enough for the mixed-dimensional
-    # cross-compartment coupling blocks: too coarse (h_edge >~ 0.1 with
-    # inner_radius 0.1) -> PETSc MatSetValuesLocal out-of-range. h_edge=0.05
-    # is the proven-working resolution. The ~15 min cost is form
-    # compilation (mesh-independent), so coarsening barely helps anyway.
+    # glutamate: a single bolus delivered as the initial Glu concentration
+    if glu == "glut_release":
+        p.Glu_init = stimulus.molecules_to_conc(
+            stimulus.GLUT_BOLUS_MOLECULES, p)
+    elif glu in (None, "none"):
+        p.Glu_init = 0.0
+    else:
+        p.Glu_init = float(glu)
+
+    # voltage: always-on V_rest+EPSP+BPAP transient, or a constant clamp
+    if clamp_mV is None:
+        voltage_expr = stimulus.voltage(V_rest=v_rest)
+    else:
+        voltage_expr = stimulus.hold_voltage(clamp_mV)
+
     m, _ = build_model(
         p, voltage_expr=voltage_expr, final_t=final_t, initial_dt=initial_dt,
         outer_radius=outer_radius, inner_radius=inner_radius, h_edge=h_edge,
@@ -93,8 +75,10 @@ def run(glu="glut_release", voltage=-70.0, final_t=0.5, out="results/hm_constant
         i = names.index(name)
         return [r[i + 1] for r in rows]
 
+    v_desc = (f"clamp {clamp_mV} mV" if clamp_mV is not None
+              else f"transient (V_rest={v_rest} mV)")
     print(f"\nWrote {len(rows)} timepoints x {len(names)} species -> {csv_path}")
-    print(f"Stimulus: Glu_init = {p.Glu_init:.3e} M, V_m = {voltage} (mV)")
+    print(f"Stimulus: Glu_init = {p.Glu_init:.3e} M, V_m = {v_desc}")
     for sp, lo_is_drop in (("Ca_c", False), ("Ca_ER", True)):
         if sp in names:
             tr = trace(sp)
@@ -109,8 +93,12 @@ def main(argv=None):
     ap = argparse.ArgumentParser(description="Run ODE model under a stimulus.")
     ap.add_argument("--glu", default="glut_release",
                     help="'glut_release', a concentration in M, or 'none'")
-    ap.add_argument("--voltage", type=float, default=-70.0,
-                    help="constant V_m clamp in mV")
+    ap.add_argument("--v-rest", type=float, default=-65.0, dest="v_rest",
+                    help="resting potential (mV) of the always-on "
+                         "V_rest+EPSP+BPAP transient")
+    ap.add_argument("--clamp", type=float, default=None,
+                    help="constant V_m clamp (mV) instead of the always-on "
+                         "transient")
     ap.add_argument("--final-t", type=float, default=0.5, dest="final_t")
     ap.add_argument("--initial-dt", type=float, default=1e-4, dest="initial_dt")
     ap.add_argument("--out", default="results/hm_constant")
@@ -122,8 +110,8 @@ def main(argv=None):
                     dest="inner_radius")
     a = ap.parse_args(argv)
     glu = None if a.glu == "none" else a.glu
-    run(glu=glu, voltage=a.voltage, final_t=a.final_t, out=a.out,
-        initial_dt=a.initial_dt, h_edge=a.h_edge,
+    run(glu=glu, v_rest=a.v_rest, clamp_mV=a.clamp, final_t=a.final_t,
+        out=a.out, initial_dt=a.initial_dt, h_edge=a.h_edge,
         outer_radius=a.outer_radius, inner_radius=a.inner_radius)
 
 

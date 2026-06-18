@@ -47,6 +47,24 @@ def plot_one(out_dir, t_ms, y, filename, ylabel, color, scale=1.0):
     return path
 
 
+def plot_stimulus(out_dir, t_ms, vm, glu):
+    """V_m and glutamate as two stacked subplots in stimulus.png."""
+    w, h = plot_style.FIGSIZE
+    fig, (ax_g, ax_v) = plt.subplots(
+        2, 1, sharex=True, figsize=(w, 1.6 * h))
+    ax_g.plot(t_ms, glu * UM, color=plot_style.color_for("Glu"))
+    ax_g.set(ylabel="Glu (µM)")
+    ax_v.plot(t_ms, vm, color=plot_style.color_for("V_m"))
+    ax_v.set(xlabel="t (ms)", ylabel="V_m (mV)")
+    for ax in (ax_g, ax_v):
+        plot_style.format_axis(ax)
+    fig.tight_layout()
+    path = out_dir / "stimulus.png"
+    fig.savefig(path)
+    plt.close(fig)
+    return path
+
+
 def _open_channel_series(col):
     p = default_parameters()
     specs = [
@@ -73,6 +91,9 @@ def _open_channel_series(col):
         for state in present:
             open_fraction += col[state]
         series[channel] = n_total * open_fraction
+    if "P_O_STIM1" in col:
+        open_fraction = col["P_O_STIM1"]
+        series["Orai1"] = float(p.N_Orai1) * open_fraction
     return series
 
 
@@ -83,14 +104,6 @@ def write_open_channel_tables(out_dir, col):
 
     paths = []
     channels = list(series)
-    counts_path = out_dir / "open_channels.csv"
-    with open(counts_path, "w", newline="") as fh:
-        w = csv.writer(fh)
-        w.writerow(["t"] + channels)
-        for i, t in enumerate(col["t"]):
-            w.writerow([t] + [series[channel][i] for channel in channels])
-    paths.append(counts_path)
-
     summary_path = out_dir / "open_channels_summary.csv"
     with open(summary_path, "w", newline="") as fh:
         w = csv.writer(fh)
@@ -141,28 +154,26 @@ def main(out_dir, t_min_ms=0.0, t_max_ms=50.0):
     t_ms, plot_mask = _time_window(col, t_min_ms, t_max_ms)
 
     written = []
-    if "V_m" in col:
+    if "V_m" in col and "Glu" in col:
         written.append(
-            plot_one(out_dir, t_ms, col["V_m"][plot_mask], "Stimulus_Vm.png",
-                     "V_m (mV)", color=plot_style.color_for("V_m"))
-        )
-    if "Glu" in col:
-        written.append(
-            plot_one(out_dir, t_ms, col["Glu"][plot_mask], "glu_conc.png",
-                     "Glu (µM)", color=plot_style.color_for("Glu"), scale=UM)
+            plot_stimulus(out_dir, t_ms, col["V_m"][plot_mask],
+                          col["Glu"][plot_mask])
         )
     if "Ca_c" in col:
+        ca_c = col["Ca_c"][plot_mask]
         written.append(
-            plot_one(out_dir, t_ms, col["Ca_c"][plot_mask], "Ca_cyto.png",
+            plot_one(out_dir, t_ms, ca_c, "Ca_cyto.png",
                      r"$[Ca^{2+}]_{cyto}$ (µM)",
                      color=plot_style.color_for("Ca_c"),
                      scale=UM)
         )
-        written.append(
-            plot_one(out_dir, t_ms, ca_ion_count(col["Ca_c"][plot_mask]),
-                     "Ca_cyto_ions.png", r"$Ca^{2+}_{cyto}$ ions",
-                     color=plot_style.color_for("Ca_c_ions"))
-        )
+        ca_c_max = np.max(ca_c)
+        if ca_c_max > 0.0:
+            written.append(
+                plot_one(out_dir, t_ms, ca_c / ca_c_max,
+                         "Ca_cyto_norm.png",
+                         r"Normalized $[Ca^{2+}]_{cyto}$",
+                         color=plot_style.color_for("Ca_c")))
     if "Ca_ER" in col:
         written.append(
             plot_one(out_dir, t_ms, col["Ca_ER"][plot_mask], "Ca_ER.png",
@@ -172,7 +183,7 @@ def main(out_dir, t_min_ms=0.0, t_max_ms=50.0):
         )
 
     written.extend(write_open_channel_tables(out_dir, col))
-    written.extend(write_ca_ions_summary(out_dir, col))
+    # written.extend(write_ca_ions_summary(out_dir, col))
     print("wrote " + ", ".join(str(path) for path in written))
 
 

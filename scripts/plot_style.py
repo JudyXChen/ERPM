@@ -2,9 +2,10 @@ FIGSIZE = (5.0, 4.0)
 DPI = 300
 
 COLORS = {
-    "cyto": "#6A3D9A",      # purple
-    "er": "#C7A6E8",        # light purple
-    "ecs": "#9ED17E",       # light green
+    "cyto": "#437bbe",  # blue
+    "er": "#4eb748",    # green
+    "ecs": "#C59C4C",  # tan
+    "junction": '#eb3fcb', # pink
     "voltage": "#8B1A1A",   # dark red
     "default": "#333333",
 }
