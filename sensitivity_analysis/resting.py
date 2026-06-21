@@ -6,7 +6,6 @@ equilibrate_gating() therefore pre-equilibrates all gating species while holding
 Ca_c and Ca_ER clamped, so dCa_ER/dt can be read off at the true resting balance.
 """
 
-import numpy as np
 from scipy.integrate import solve_ivp
 
 from model.ode0d import build_system, rhs, _make_voltage
