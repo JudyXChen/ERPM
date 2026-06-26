@@ -11,18 +11,36 @@ import numpy as np
 from joblib import Parallel, delayed
 
 from model.parameters import default_parameters
-from .config import active_groups, factor_for, RANGE_OVERRIDES
+from .config import active_groups, factor_for, RANGE_OVERRIDES, GROUPS
 from .evaluate import evaluate, QOI_NAMES
 
 
-def build_problem(include_soce=False, *, grouped=True):
+def build_problem(include_soce=False, *, grouped=True, only_groups=None):
     """SALib problem dict with log10 bounds.
 
     grouped=True attaches a 'groups' entry (one Sobol/Morris index per
     mechanism); grouped=False omits it (per-parameter indices).
+
+    only_groups (iterable of group names) restricts sampling to those
+    mechanisms, holding every other parameter pinned at its nominal value.
+    This is the lever for a *within-group* analysis: pass
+    only_groups=["ryr", "setpoints"] with grouped=False to get one
+    per-parameter Sobol/PRCC index for each RyR and setpoint parameter while
+    the rest of the model stays fixed.
     """
     p0 = default_parameters()
     groups = active_groups(include_soce)
+    if only_groups is not None:
+        wanted = list(dict.fromkeys(only_groups))
+        unknown = [g for g in wanted if g not in GROUPS]
+        if unknown:
+            raise ValueError(f"unknown group(s): {unknown}; "
+                             f"choose from {sorted(GROUPS)}")
+        missing = [g for g in wanted if g not in groups]
+        if missing:
+            raise ValueError(
+                f"group(s) {missing} require include_soce=True (pass --soce)")
+        groups = {g: groups[g] for g in wanted}
     names, bounds, group_of = [], [], []
     for g, params in groups.items():
         f = factor_for(g)

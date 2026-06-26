@@ -30,12 +30,19 @@ one-at-a-time sweeps — only globally and grouped.
    ranking (`mu*`, `sigma`). Validates the grouping and picks drill-down targets.
 2. **Grouped Sobol** (`run_sobol`) — variance attribution per mechanism
    (`S1`, `ST`; `ST-S1` = interaction). The centerpiece.
-3. **Within-group Sobol** — re-run `run_sobol` after narrowing `config.GROUPS`
-   to the winning module's individual parameters (each as its own group).
+3. **Within-group Sobol + PRCC** (`run_within_sobol`) — drill inside the winning
+   mechanism(s): vary only their parameters (each its own factor, everything
+   else pinned at nominal) and report, per parameter, the **Sobol** S1/ST
+   (unsigned importance) **and PRCC** (signed direction, Leung et al. 2023
+   Fig. 2 style). Rendered as parameter×QoI heatmaps. `--groups` picks the
+   mechanisms; `prcc.py` computes the partial rank correlations from the *same*
+   samples (no extra model runs).
 
-Sobol is preferred over PRCC here: the resting balance is a non-monotonic,
-interaction-heavy refill↔drain competition with CICR feedback, where PRCC's
-monotonicity assumption fails.
+Sobol is the importance measure of record here: the resting balance is a
+non-monotonic, interaction-heavy refill↔drain competition with CICR feedback,
+where PRCC's monotonicity assumption fails. PRCC is included only as a *signed
+direction hint* (which way to move a lever), to be read alongside — not instead
+of — the Sobol magnitude.
 
 ## Usage
 
@@ -51,6 +58,15 @@ conda run -n erpm python -m sensitivity_analysis.run_sobol --n 512 --trajectory
 
 # include SOCE as a tenth group
 conda run -n erpm python -m sensitivity_analysis.run_sobol --n 1024 --soce
+
+# within-group: which RyR / setpoint / leak parameter is the drain lever
+conda run -n erpm python -m sensitivity_analysis.run_within_sobol \
+    --groups ryr setpoints serca_leak --n 1024
+
+# within-group SOCE: which SOCE parameter sets the multi-second ER floor
+conda run -n erpm python -m sensitivity_analysis.run_within_sobol \
+    --groups soce --soce --trajectory --t-max 3.0 --n 512 \
+    --out results/sensitivity/within_soce
 ```
 
 Cost: resting eval ≈ 0.24 s/eval on 8 cores. Sobol evals = `N*(G+2)`

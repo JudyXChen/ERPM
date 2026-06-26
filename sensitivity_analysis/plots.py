@@ -38,6 +38,71 @@ def plot_grouped_sobol(results, out_dir):
     plt.close(fig)
 
 
+def plot_within_sobol_heatmap(results, names, out_dir, title=""):
+    """Parameter x QoI heatmaps for a within-group run.
+
+    Three panels share the parameter (row) axis:
+      - Sobol ST : total-order importance (unsigned, 0..1).
+      - Sobol S1 : first-order / main effect (the rest is interaction).
+      - PRCC     : signed direction (Leung-style; diverging colormap),
+                   '*' marks the cells with |PRCC| significant at p<0.05.
+    Rows are ordered by mean ST so the dominant levers sit at the top.
+    """
+    plt = _mpl()
+    out_dir = pathlib.Path(out_dir)
+    qois = list(results)
+
+    ST = np.array([[results[q]["ST"][i] for q in qois]
+                   for i in range(len(names))])
+    S1 = np.array([[results[q]["S1"][i] for q in qois]
+                   for i in range(len(names))])
+
+    def _prcc(key):
+        return np.array([
+            [(results[q].get(key) or [np.nan] * len(names))[i] for q in qois]
+            for i in range(len(names))])
+
+    PR = _prcc("prcc")
+    PV = _prcc("prcc_pval")
+
+    order = np.argsort(np.nanmean(ST, axis=1))[::-1]
+    rows = [names[i] for i in order]
+    ST, S1, PR, PV = ST[order], S1[order], PR[order], PV[order]
+
+    panels = [
+        ("Sobol ST (total)", ST, "viridis", 0.0, max(1.0, np.nanmax(ST)), False),
+        ("Sobol S1 (main)", S1, "viridis", 0.0, max(1.0, np.nanmax(S1)), False),
+        ("PRCC (direction)", PR, "RdBu_r", -1.0, 1.0, True),
+    ]
+    n = len(rows)
+    fig, axes = plt.subplots(
+        1, 3, figsize=(2.0 * len(qois) * 3 + 2, 0.42 * n + 2.2),
+        squeeze=False)
+    for ax, (lab, M, cmap, vmin, vmax, signed) in zip(axes[0], panels):
+        im = ax.imshow(M, aspect="auto", cmap=cmap, vmin=vmin, vmax=vmax)
+        ax.set_xticks(range(len(qois)))
+        ax.set_xticklabels(qois, rotation=45, ha="right", fontsize=8)
+        ax.set_yticks(range(n))
+        ax.set_yticklabels(rows, fontsize=8)
+        ax.set_title(lab, fontsize=10)
+        for r in range(n):
+            for c in range(len(qois)):
+                v = M[r, c]
+                if not np.isfinite(v):
+                    continue
+                star = "*" if signed and np.isfinite(PV[r, c]) \
+                    and PV[r, c] < 0.05 else ""
+                txt = f"{v:.2f}{star}"
+                shade = abs(v) / max(vmax, 1e-9) if signed else v / max(vmax, 1e-9)
+                ax.text(c, r, txt, ha="center", va="center", fontsize=6.5,
+                        color="white" if shade > 0.55 else "black")
+        fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+    fig.suptitle(f"Within-group sensitivity: {title}", fontsize=11)
+    fig.tight_layout(rect=(0, 0, 1, 0.97))
+    fig.savefig(out_dir / "within_sobol_heatmap.png", dpi=140)
+    plt.close(fig)
+
+
 def plot_morris(results, out_dir):
     plt = _mpl()
     out_dir = pathlib.Path(out_dir)
