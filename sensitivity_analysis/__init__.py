@@ -1,13 +1,12 @@
-"""Global sensitivity analysis for the well-mixed 0D ER-PM model.
+"""Global sensitivity analysis for the well-mixed 0D ER-PM model (SOCE always on).
 
-Entry points:
-    python -m sensitivity_analysis.run_morris   # cheap all-parameter screen
-    python -m sensitivity_analysis.run_sobol    # grouped Sobol (mechanism)
+    python -m sensitivity_analysis.run_morris    # all-parameter Morris screen
+    python -m sensitivity_analysis.run_sobol     # grouped / within-group Sobol
 
-See config.GROUPS to re-cut the parameter grouping.
+Edit config.GROUPS to re-cut the parameter grouping.
 """
 
-from .config import GROUPS, FACTORS, active_groups
+from .config import GROUPS, FACTORS
 from .evaluate import QOI_NAMES, evaluate
 
-__all__ = ["GROUPS", "FACTORS", "active_groups", "QOI_NAMES", "evaluate"]
+__all__ = ["GROUPS", "FACTORS", "QOI_NAMES", "evaluate"]

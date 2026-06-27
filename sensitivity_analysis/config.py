@@ -1,16 +1,11 @@
-"""Parameter groups and sampling ranges for the global sensitivity analysis.
+"""Parameter groups and log-uniform sampling ranges for the SA.
 
-Sampling is multiplicative / log-uniform: each parameter is drawn over
-[nominal / factor, nominal * factor] in log10 space.  FACTORS sets the spread
-per group (geometry is tighter because the MCell mesh constrains it; rates and
-counts are the genuinely uncertain knobs).  Per-parameter overrides go in
-RANGE_OVERRIDES.
-
-Edit GROUPS to re-cut the grouping; everything downstream keys off it.
+Each parameter is sampled over [nominal/f, nominal*f] in log10 space; FACTORS
+sets f per group (geometry tighter; rates/counts span an order of magnitude).
+Per-parameter absolute bounds go in RANGE_OVERRIDES. Edit GROUPS to re-cut.
 """
 
-# group -> parameters it owns.  Order is cosmetic; names must exist in
-# model.parameters.default_parameters().
+# group -> parameters it owns. Names must exist in default_parameters().
 GROUPS = {
     "geometry": ["V_spine", "V_ER"],
     "serca_uptake": [
@@ -36,30 +31,18 @@ GROUPS = {
     ],
     "ip3_basal": ["IP3_basal", "k_f", "k_deg"],
     "setpoints": ["Ca_ER_init", "Ca_c_init", "Ca_ext"],
-    # SOCE is only meaningful with include_soce=True; excluded by default.
     "soce": ["N_Orai1", "g_Orai1", "K_STIM1", "tau_STIM1", "w_STIM1"],
 }
 
-# Default multiplicative spread per group (sampled log-uniform over [1/f, f]).
+# Multiplicative spread per group (sampled log-uniform over [nominal/f, nominal*f]).
 FACTORS = {
-    "geometry": 2.0,        # MCell mesh pins this; vary only modestly
-    "setpoints": 3.0,       # Ca_ER/Ca_c/Ca_ext are fairly well known
-    "_default": 10.0,       # rates and channel counts: an order of magnitude
+    "geometry": 2.0,    # MCell mesh pins this
+    "setpoints": 3.0,   # Ca_ER/Ca_c/Ca_ext fairly well known
+    "_default": 10.0,   # rates and channel counts
 }
 
 # Per-parameter absolute (low, high) overrides; bypasses the factor rule.
 RANGE_OVERRIDES = {}
-
-# Groups that require include_soce=True to have any effect.
-SOCE_GROUPS = {"soce"}
-
-
-def active_groups(include_soce=False):
-    """The grouping dict actually used for a run."""
-    return {
-        g: ps for g, ps in GROUPS.items()
-        if include_soce or g not in SOCE_GROUPS
-    }
 
 
 def factor_for(group):

@@ -1,36 +1,26 @@
-"""Evaluate the resting-baseline QoIs for one parameter sample.
+"""Resting-baseline QoIs for one parameter sample (SOCE always active).
 
-Uses the equilibration / flux-decomposition machinery vendored in
-sensitivity_analysis.resting so the SA measures the same resting 
-quantities the manual one-at-a-time sweeps use.
+Two tiers sharing one stable schema (trajectory keys are NaN when not run):
+  qoi_resting(p)     -- cheap: equilibrate gating at the clamped resting state,
+                        then read the ER flux balance + open fractions.
+  qoi_trajectory(p)  -- one free integration: ER Ca left, drain half-life, Ca_c.
 
-Two tiers:
-  qoi_resting(p)     -- cheap: equilibrate gating at the clamped resting state
-                        and read the resting ER flux balance + open fractions.
-                        Use this for the large grouped-Sobol sweep.
-  qoi_trajectory(p)  -- one free integration (no clamp): how much ER Ca is left,
-                        the drain half-life, and the emergent resting Ca_c.
-                        Use for screening / within-group runs.
-
-Every QoI is returned for both tiers (trajectory keys are NaN when only the
-resting tier is requested) so the output schema is stable.
+At t=0 every channel is closed, so the drain only develops once the Markov
+gating equilibrates; equilibrate_gating() pre-equilibrates gating with Ca_c and
+Ca_ER clamped so dCa_ER/dt is read at the true resting balance.
 """
 
 import numpy as np
+from scipy.integrate import solve_ivp
 
 from model.parameters import default_parameters
-from .resting import (
-    equilibrate_gating,
-    decompose_caer,
-    grouped,
-    open_fractions,
-)
+from model.ode0d import build_system, rhs, _make_voltage
 
-# Stable QoI ordering.  Downstream code indexes Y by these names.
+# Stable QoI ordering. Downstream code indexes Y by these names.
 QOI_NAMES = (
     "net_drain",      # resting net dCa_ER/dt (M/s); <0 means draining
     "abs_drain",      # |net_drain|; magnitude for variance attribution
-    "tau_drain",      # Ca_ER / |net|  (s); large = stable rest
+    "tau_drain",      # Ca_ER / |net| (s); large = stable rest
     "ip3r_open",      # resting IP3R open fraction
     "ryr_open",       # resting RyR open fraction
     "caer_frac_end",  # Ca_ER(t_max) / Ca_ER(0), free run
@@ -41,16 +31,81 @@ QOI_NAMES = (
 _TAU_CAP = 1.0e6  # s; cap the "stable" tail so NaN/inf don't poison SALib
 
 
-def make_params(overrides):
-    """default_parameters() with `overrides` applied and derived values fixed.
+# --- resting equilibration helpers ---
 
-    V_spine_L (liters) must track V_spine (um^3) or the N/(N_A*V) scalings break;
-    we recompute it here so geometry can be sampled via V_spine alone.
-    """
+def _group(name):
+    """Map a reaction name to its ER-flux source."""
+    if name == "S_leak":
+        return "SERCA_leak"
+    if name.startswith("S_"):
+        return "SERCA_pump"
+    if name.startswith("IP3R"):
+        return "IP3R"
+    if name.startswith("RyR"):
+        return "RyR"
+    if name.startswith("SOCE"):
+        return "SOCE"
+    return "other"
+
+
+def equilibrate_gating(p, *, t_eq=2.0, v_rest=-65.0):
+    """Integrate with Ca_c and Ca_ER frozen so gating reaches resting steady
+    state. Returns (names, y_eq, compiled, idx, vfun) at the clamped state."""
+    names, y0, compiled, _ = build_system(p, include_soce=True)
+    idx = {n: i for i, n in enumerate(names)}
+    ca_c, ca_er = idx["Ca_c"], idx["Ca_ER"]
+    vfun = _make_voltage(float(v_rest))
+
+    def rhs_frozen(t, y):
+        d = rhs(t, y, compiled, vfun)
+        d[ca_c] = d[ca_er] = 0.0
+        return d
+
+    sol = solve_ivp(rhs_frozen, (0.0, t_eq), y0, method="BDF",
+                    rtol=1e-8, atol=1e-14, dense_output=False)
+    y_eq = sol.y[:, -1].copy()
+    y_eq[ca_c], y_eq[ca_er] = y0[ca_c], y0[ca_er]  # undo any tiny drift
+    return names, y_eq, compiled, idx, vfun
+
+
+def decompose_caer(y, compiled, vfun, caer_idx, t=0.0):
+    """Per-reaction contribution to dCa_ER/dt at state y (M/s)."""
+    Vm = vfun(t)
+    contrib = {}
+    for nm, ff, fo, rf, ro, st in compiled:
+        if caer_idx not in st:
+            continue
+        net = 0.0
+        if ff is not None:
+            net += ff(*(y[i] for i in fo), Vm)
+        if rf is not None:
+            net -= rf(*(y[i] for i in ro), Vm)
+        contrib[nm] = st[caer_idx] * net
+    return contrib
+
+
+def grouped(contrib):
+    g = {}
+    for nm, v in contrib.items():
+        g[_group(nm)] = g.get(_group(nm), 0.0) + v
+    return g
+
+
+def open_fractions(y, idx):
+    """Resting open fraction of IP3R (IPR_110) and RyR (sum of O states)."""
+    ip3r_open = y[idx["IPR_110"]] if "IPR_110" in idx else float("nan")
+    ryr_open = sum(y[i] for n, i in idx.items() if n.startswith("R_O_"))
+    return ip3r_open, ryr_open
+
+
+# --- QoIs ---
+
+def make_params(overrides):
+    """default_parameters() with overrides applied; V_spine_L (liters) is kept
+    in sync with the sampled V_spine (um^3) so the N/(N_A*V) scalings hold."""
     p = default_parameters()
     for k, v in overrides.items():
         setattr(p, k, float(v))
-    # keep the absolute spine volume consistent with the sampled um^3 value
     p.V_spine_L = float(p.V_spine) * 1e-15
     return p
 
@@ -59,9 +114,8 @@ def _nan_qois():
     return {k: float("nan") for k in QOI_NAMES}
 
 
-def qoi_resting(p, *, include_soce=False):
-    names, y_eq, compiled, idx, vfun = equilibrate_gating(
-        p, include_soce=include_soce)
+def qoi_resting(p):
+    names, y_eq, compiled, idx, vfun = equilibrate_gating(p)
     caer = idx["Ca_ER"]
     g = grouped(decompose_caer(y_eq, compiled, vfun, caer))
     net = float(sum(g.values()))
@@ -77,11 +131,8 @@ def qoi_resting(p, *, include_soce=False):
     }
 
 
-def qoi_trajectory(p, *, include_soce=False, t_max=1.0):
-    from model.ode0d import build_system, rhs, _make_voltage
-    from scipy.integrate import solve_ivp
-
-    names, y0, compiled, _ = build_system(p, include_soce=include_soce)
+def qoi_trajectory(p, *, t_max=1.0):
+    names, y0, compiled, _ = build_system(p, include_soce=True)
     idx = {n: i for i, n in enumerate(names)}
     caer, cac = idx["Ca_ER"], idx["Ca_c"]
     ca_er0 = float(y0[caer])
@@ -99,16 +150,14 @@ def qoi_trajectory(p, *, include_soce=False, t_max=1.0):
     }
 
 
-def evaluate(overrides, *, include_soce=False, trajectory=False, t_max=1.0):
-    """Full QoI dict for one sample.  Failures -> all-NaN (masked later)."""
-    out = _nan_qois()
+def evaluate(overrides, *, trajectory=False, t_max=1.0):
+    """Full QoI dict for one sample. Any failure -> all-NaN (masked later)."""
     try:
         p = make_params(overrides)
-        out.update(qoi_resting(p, include_soce=include_soce))
+        out = _nan_qois()
+        out.update(qoi_resting(p))
         if trajectory:
-            out.update(qoi_trajectory(p, include_soce=include_soce,
-                                      t_max=t_max))
-    except Exception:
-        # extreme draws can stiffen the solver; record NaN and move on
+            out.update(qoi_trajectory(p, t_max=t_max))
+        return out
+    except Exception:  # extreme draws can stiffen the solver
         return _nan_qois()
-    return out

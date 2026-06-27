@@ -1,21 +1,20 @@
 """Morris elementary-effects screen over all parameters individually.
 
-A cheap global screen that ranks every parameter by mu_star (overall influence)
-and sigma (nonlinearity / interaction). 
+A cheap global screen ranking each parameter by mu_star (overall influence)
+and sigma (nonlinearity / interaction); pre-screen for the Sobol runs.
 
 Run:
-    conda run -n erpm python -m sensitivity_analysis.run_morris --r 20
+    python -m sensitivity_analysis.run_morris --r 20
 """
 
 import argparse
-import json
-import pathlib
 
 import numpy as np
 from SALib.sample import morris as morris_sampler
 from SALib.analyze import morris as morris_analyze
 
-from .core import build_problem, run_matrix, clean_for_analysis
+from .core import (build_problem, run_matrix, clean_for_analysis,
+                   add_common_args, save_run)
 
 REPORT_QOIS = ("abs_drain", "tau_drain")
 
@@ -25,23 +24,16 @@ def main(argv=None):
     ap.add_argument("--r", type=int, default=20,
                     help="number of Morris trajectories (evals = r*(P+1))")
     ap.add_argument("--levels", type=int, default=4)
-    ap.add_argument("--soce", action="store_true")
-    ap.add_argument("--trajectory", action="store_true")
-    ap.add_argument("--n-jobs", type=int, default=-1)
-    ap.add_argument("--t-max", type=float, default=1.0, dest="t_max",
-                    help="free-integration window (s) for trajectory QoIs")
-    ap.add_argument("--seed", type=int, default=12345)
-    ap.add_argument("--out", default="results/sensitivity/morris")
+    add_common_args(ap, default_out="results/sensitivity/morris")
     a = ap.parse_args(argv)
 
-    # per-parameter screen -> no groups
-    problem = build_problem(include_soce=a.soce, grouped=False)
+    problem = build_problem(grouped=False)  # per-parameter screen
     X = morris_sampler.sample(problem, a.r, num_levels=a.levels, seed=a.seed)
     print(f"Morris: {problem['num_vars']} params, r={a.r} "
           f"-> {X.shape[0]} evaluations")
 
-    Y = run_matrix(problem, X, include_soce=a.soce,
-                   trajectory=a.trajectory, n_jobs=a.n_jobs, t_max=a.t_max)
+    Y = run_matrix(problem, X, trajectory=a.trajectory,
+                   n_jobs=a.n_jobs, t_max=a.t_max)
 
     report = REPORT_QOIS + (("caer_frac_end",) if a.trajectory else ())
     results = {}
@@ -57,22 +49,16 @@ def main(argv=None):
         }
         _print_table(qoi, Si, n_fail, X.shape[0])
 
-    out_dir = pathlib.Path(a.out)
-    out_dir.mkdir(parents=True, exist_ok=True)
-    with open(out_dir / "morris_indices.json", "w") as fh:
-        json.dump(results, fh, indent=2)
-    try:
+    def plot(out):
         from .plots import plot_morris
-        plot_morris(results, out_dir)
-        print(f"\nPlots + data -> {out_dir}/")
-    except Exception as exc:
-        print(f"\nData -> {out_dir}/  (plot skipped: {exc})")
+        plot_morris(results, out)
+
+    save_run(a.out, "morris_indices.json", results, plot=plot)
     return results
 
 
 def _print_table(qoi, Si, n_fail, n_eval, top=15):
-    mu = np.asarray(Si["mu_star"])
-    order = np.argsort(mu)[::-1][:top]
+    order = np.argsort(Si["mu_star"])[::-1][:top]
     print("\n" + "=" * 56)
     print(f"QoI: {qoi}   (top {top} by mu*; {n_fail}/{n_eval} failed)")
     print("=" * 56)

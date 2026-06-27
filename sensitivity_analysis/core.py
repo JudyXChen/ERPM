@@ -1,46 +1,40 @@
-"""Problem construction, log-space sampling, and parallel evaluation.
+"""Problem construction, log-space sampling, parallel evaluation, and the
+shared CLI/output plumbing used by the runners.
 
-The SALib `problem` is built from the active groups.  Parameters are sampled in
-log10 space (bounds = log10 of the lo/hi multiplicative range), so the sampler
-sees a uniform box while the model sees log-uniform draws spanning orders of
-magnitude.  `run_matrix` exponentiates each row back to physical values, applies
-them as overrides, and evaluates the QoIs in parallel with joblib.
+Parameters are sampled in log10 space (bounds = log10 of the lo/hi range), so
+the sampler sees a uniform box while the model sees log-uniform draws.
+`run_matrix` exponentiates each row, applies the overrides, and evaluates the
+QoIs in parallel; SOCE is always active.
 """
+
+import json
+import pathlib
 
 import numpy as np
 from joblib import Parallel, delayed
 
 from model.parameters import default_parameters
-from .config import active_groups, factor_for, RANGE_OVERRIDES, GROUPS
+from .config import factor_for, RANGE_OVERRIDES, GROUPS
 from .evaluate import evaluate, QOI_NAMES
 
 
-def build_problem(include_soce=False, *, grouped=True, only_groups=None):
+def build_problem(*, grouped=True, only_groups=None):
     """SALib problem dict with log10 bounds.
 
-    grouped=True attaches a 'groups' entry (one Sobol/Morris index per
-    mechanism); grouped=False omits it (per-parameter indices).
-
-    only_groups (iterable of group names) restricts sampling to those
-    mechanisms, holding every other parameter pinned at its nominal value.
-    This is the lever for a *within-group* analysis: pass
-    only_groups=["ryr", "setpoints"] with grouped=False to get one
-    per-parameter Sobol/PRCC index for each RyR and setpoint parameter while
-    the rest of the model stays fixed.
+    grouped=True attaches a 'groups' entry (one index per mechanism);
+    grouped=False gives per-parameter indices. only_groups restricts sampling
+    to those mechanisms (the rest pinned at nominal) -- the within-group lever.
     """
     p0 = default_parameters()
-    groups = active_groups(include_soce)
+    groups = GROUPS
     if only_groups is not None:
         wanted = list(dict.fromkeys(only_groups))
         unknown = [g for g in wanted if g not in GROUPS]
         if unknown:
             raise ValueError(f"unknown group(s): {unknown}; "
                              f"choose from {sorted(GROUPS)}")
-        missing = [g for g in wanted if g not in groups]
-        if missing:
-            raise ValueError(
-                f"group(s) {missing} require include_soce=True (pass --soce)")
-        groups = {g: groups[g] for g in wanted}
+        groups = {g: GROUPS[g] for g in wanted}
+
     names, bounds, group_of = [], [], []
     for g, params in groups.items():
         f = factor_for(g)
@@ -50,58 +44,43 @@ def build_problem(include_soce=False, *, grouped=True, only_groups=None):
                 lo, hi = RANGE_OVERRIDES[name]
             elif nominal > 0:
                 lo, hi = nominal / f, nominal * f
-            else:
-                # non-positive nominal: fall back to a small symmetric box
-                span = abs(nominal) if nominal else 1.0
+            else:  # non-positive nominal: small symmetric fallback box
+                span = abs(nominal) or 1.0
                 lo, hi = -span * f, span * f
             if lo <= 0:
-                raise ValueError(
-                    f"{name}: log sampling needs lo>0 (got {lo}); add an "
-                    f"entry to RANGE_OVERRIDES")
+                raise ValueError(f"{name}: log sampling needs lo>0 (got {lo}); "
+                                 f"add a RANGE_OVERRIDES entry")
             names.append(name)
             bounds.append([np.log10(lo), np.log10(hi)])
             group_of.append(g)
 
-    problem = {
-        "num_vars": len(names),
-        "names": names,
-        "bounds": bounds,
-    }
+    problem = {"num_vars": len(names), "names": names, "bounds": bounds}
     if grouped:
         problem["groups"] = group_of
     return problem
 
 
-def run_matrix(problem, X_log, *, include_soce=False, trajectory=False,
-               n_jobs=-1, t_max=1.0, verbose=10):
-    """Evaluate every row of X_log (log10 values) -> Y dict of arrays.
+def run_matrix(problem, X_log, *, trajectory=False, n_jobs=-1, t_max=1.0,
+               verbose=10):
+    """Evaluate every row of X_log (log10 values) -> {qoi: array}.
 
-    Returns {qoi_name: np.ndarray(shape=[n_samples])}.  Rows that error come
-    back as NaN; callers mask them before SALib analysis.
+    Rows that error come back as NaN; callers mask them before SALib analysis.
     """
     names = problem["names"]
     X = np.asarray(X_log, dtype=float)
 
     def _one(row):
         overrides = {nm: 10.0 ** row[i] for i, nm in enumerate(names)}
-        return evaluate(overrides, include_soce=include_soce,
-                        trajectory=trajectory, t_max=t_max)
+        return evaluate(overrides, trajectory=trajectory, t_max=t_max)
 
     records = Parallel(n_jobs=n_jobs, verbose=verbose)(
         delayed(_one)(X[k]) for k in range(X.shape[0]))
-
-    return {q: np.array([r[q] for r in records], dtype=float)
-            for q in QOI_NAMES}
-
-
-def failure_rate(Y, qoi):
-    col = Y[qoi]
-    return float(np.isnan(col).mean())
+    return {q: np.array([r[q] for r in records], dtype=float) for q in QOI_NAMES}
 
 
 def clean_for_analysis(col):
-    """SALib cannot handle NaN.  Replace with the column mean (a neutral fill);
-    returns (filled_column, n_failed).  Caller should report n_failed."""
+    """SALib cannot handle NaN: replace with the column mean (neutral fill).
+    Returns (filled_column, n_failed)."""
     col = np.asarray(col, dtype=float)
     bad = np.isnan(col)
     if bad.all():
@@ -110,3 +89,32 @@ def clean_for_analysis(col):
         col = col.copy()
         col[bad] = np.nanmean(col)
     return col, int(bad.sum())
+
+
+def add_common_args(ap, *, default_out):
+    """argparse options shared by every runner."""
+    ap.add_argument("--trajectory", action="store_true",
+                    help="also compute free-run QoIs (caer_frac_end / ca_c_end)")
+    ap.add_argument("--n-jobs", type=int, default=-1)
+    ap.add_argument("--t-max", type=float, default=1.0, dest="t_max",
+                    help="free-integration window (s) for trajectory QoIs")
+    ap.add_argument("--seed", type=int, default=12345)
+    ap.add_argument("--out", default=default_out)
+
+
+def save_run(out_dir, json_name, results, *, X=None, Y=None, plot=None):
+    """Write the indices JSON (+ optional samples + plots) for a run."""
+    out = pathlib.Path(out_dir)
+    out.mkdir(parents=True, exist_ok=True)
+    with open(out / json_name, "w") as fh:
+        json.dump(results, fh, indent=2)
+    if X is not None and Y is not None:
+        np.savez(out / "samples.npz", X=X, **{f"Y_{k}": v for k, v in Y.items()})
+    if plot is None:
+        print(f"\nData -> {out}/")
+        return
+    try:
+        plot(out)
+        print(f"\nPlots + data -> {out}/")
+    except Exception as exc:  # plotting is optional
+        print(f"\nData -> {out}/  (plot skipped: {exc})")
