@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
-#   conda env create -f sensitivity_analysis/environment.yml   # one time
-#   conda activate erpm-sa
+#   conda env create -f environment.yml   # one time
+#   conda activate erpm
 #   bash sensitivity_analysis/run_server.sh
 #
 # Tunables via environment variables (defaults in brackets):
