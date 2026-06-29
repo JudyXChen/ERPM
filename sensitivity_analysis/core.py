@@ -60,8 +60,8 @@ def build_problem(*, grouped=True, only_groups=None):
     return problem
 
 
-def run_matrix(problem, X_log, *, trajectory=False, n_jobs=-1, t_max=1.0,
-               verbose=10):
+def run_matrix(problem, X_log, *, trajectory=False, stim=False, n_jobs=-1,
+               t_max=1.0, stim_window=0.050, verbose=10):
     """Evaluate every row of X_log (log10 values) -> {qoi: array}.
 
     Rows that error come back as NaN; callers mask them before SALib analysis.
@@ -71,7 +71,8 @@ def run_matrix(problem, X_log, *, trajectory=False, n_jobs=-1, t_max=1.0,
 
     def _one(row):
         overrides = {nm: 10.0 ** row[i] for i, nm in enumerate(names)}
-        return evaluate(overrides, trajectory=trajectory, t_max=t_max)
+        return evaluate(overrides, trajectory=trajectory, stim=stim,
+                        t_max=t_max, stim_window=stim_window)
 
     records = Parallel(n_jobs=n_jobs, verbose=verbose)(
         delayed(_one)(X[k]) for k in range(X.shape[0]))
@@ -95,9 +96,14 @@ def add_common_args(ap, *, default_out):
     """argparse options shared by every runner."""
     ap.add_argument("--trajectory", action="store_true",
                     help="also compute free-run QoIs (caer_frac_end / ca_c_end)")
+    ap.add_argument("--stimulus", action="store_true",
+                    help="also compute single-pulse stimulus-response QoIs "
+                         "(Ca_cyto transient + per-pathway flux)")
     ap.add_argument("--n-jobs", type=int, default=-1)
     ap.add_argument("--t-max", type=float, default=1.0, dest="t_max",
                     help="free-integration window (s) for trajectory QoIs")
+    ap.add_argument("--stim-window", type=float, default=0.050, dest="stim_window",
+                    help="response window (s) after the glutamate pulse")
     ap.add_argument("--seed", type=int, default=12345)
     ap.add_argument("--out", default=default_out)
 

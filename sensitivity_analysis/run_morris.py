@@ -15,6 +15,7 @@ from SALib.analyze import morris as morris_analyze
 
 from .core import (build_problem, run_matrix, clean_for_analysis,
                    add_common_args, save_run)
+from .evaluate import STIM_QOI_NAMES
 
 REPORT_QOIS = ("abs_drain", "tau_drain")
 
@@ -32,10 +33,13 @@ def main(argv=None):
     print(f"Morris: {problem['num_vars']} params, r={a.r} "
           f"-> {X.shape[0]} evaluations")
 
-    Y = run_matrix(problem, X, trajectory=a.trajectory,
-                   n_jobs=a.n_jobs, t_max=a.t_max)
+    Y = run_matrix(problem, X, trajectory=a.trajectory, stim=a.stimulus,
+                   n_jobs=a.n_jobs, t_max=a.t_max, stim_window=a.stim_window)
 
-    report = REPORT_QOIS + (("caer_frac_end",) if a.trajectory else ())
+    if a.stimulus:
+        report = STIM_QOI_NAMES
+    else:
+        report = REPORT_QOIS + (("caer_frac_end",) if a.trajectory else ())
     results = {}
     for qoi in report:
         col, n_fail = clean_for_analysis(Y[qoi])

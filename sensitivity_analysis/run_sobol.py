@@ -4,11 +4,15 @@ Default (--groups all): grouped Sobol, one index per mechanism -- "X% of the
 variance in the resting drain is controlled by RyR, Y% by setpoints, ...".
 Name groups instead (--groups ryr setpoints serca_leak): drill inside them,
 one per-parameter index each with the rest of the model pinned at nominal.
-Both report Sobol S1 (main) / ST (total); ST-S1 is the interaction share, and
-the result is rendered as a heatmap.
+Both report Sobol S1 / ST, rendered as a heatmap.
+
+--stimulus switches the QoIs from the resting ER balance to the single-pulse
+stimulus response (Ca_cyto transient features + per-pathway Ca flux), so the
+heatmap attributes each response feature to a mechanism (or parameter).
 
 Run:
     python -m sensitivity_analysis.run_sobol --n 1024
+    python -m sensitivity_analysis.run_sobol --stimulus --n 1024
     python -m sensitivity_analysis.run_sobol --groups ryr setpoints serca_leak --n 1024
 """
 
@@ -20,11 +24,13 @@ from SALib.analyze import sobol as sobol_analyze
 
 from .core import (build_problem, run_matrix, clean_for_analysis,
                    add_common_args, save_run)
+from .evaluate import STIM_QOI_NAMES
 
-# Resting QoIs are always available; trajectory QoIs need --trajectory.
+# Resting QoIs are always available; trajectory/stimulus QoIs need their flag.
 GROUPED_QOIS = ("abs_drain", "tau_drain")
 WITHIN_QOIS = ("abs_drain", "tau_drain", "ryr_open", "ip3r_open")
 TRAJECTORY_QOIS = ("caer_frac_end", "ca_c_end")
+STIM_QOIS = STIM_QOI_NAMES
 
 
 def main(argv=None):
@@ -49,12 +55,17 @@ def main(argv=None):
     print(f"Sobol ({label}): {problem['num_vars']} params, N={a.n} "
           f"-> {X.shape[0]} evaluations")
 
-    Y = run_matrix(problem, X, trajectory=a.trajectory,
-                   n_jobs=a.n_jobs, t_max=a.t_max)
+    Y = run_matrix(problem, X, trajectory=a.trajectory, stim=a.stimulus,
+                   n_jobs=a.n_jobs, t_max=a.t_max, stim_window=a.stim_window)
 
-    report = list(GROUPED_QOIS if grouped else WITHIN_QOIS)
-    if a.trajectory:
-        report += list(TRAJECTORY_QOIS)
+    # --stimulus drives the stimulus-response QoIs; otherwise report the
+    # resting/free-run ER-balance QoIs.
+    if a.stimulus:
+        report = list(STIM_QOIS)
+    else:
+        report = list(GROUPED_QOIS if grouped else WITHIN_QOIS)
+        if a.trajectory:
+            report += list(TRAJECTORY_QOIS)
     keyname = "groups" if grouped else "names"
 
     results = {}
