@@ -116,7 +116,7 @@ def register(p):
             "IP3R_flux",
             ["Ca_ER"], ["Ca_c"],
             param_map={"k": "k_IP3R_flux"},
-            eqn_f_str="k*IPR_110*(Ca_ER - Ca_c)",
+            eqn_f_str="k*(IPR_110**3)*(Ca_ER - Ca_c)",
             species_map={
                 "IPR_110": "IPR_110", "Ca_c": "Ca_c", "Ca_ER": "Ca_ER",
             },

@@ -96,13 +96,14 @@ def register(p):
             species_map={"Sy": "Sy", "Sx": "Sx"},
             explicit_restriction_to_domain=erm,
         ),
-        # ER -> cyto passive leak. *** Require optimization ***
+        # ER -> cyto passive leak. 
         Reaction(
             "S_leak", ["Ca_ER"], ["Ca_c"],
             param_map={"k": "k_S_leak"},
             eqn_f_str="k*Ca_ER",
             species_map={"Ca_ER": "Ca_ER", "Ca_c": "Ca_c"},
-            flux_scaling={"Ca_ER": float(p.V_spine) / float(p.V_ER)},
+            flux_scaling={"Ca_ER": 1.0,
+                          "Ca_c": float(p.V_ER) / float(p.V_spine)},
             explicit_restriction_to_domain=erm,
         ),
     ]
