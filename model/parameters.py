@@ -113,8 +113,8 @@ def default_parameters():
         # SERCA (Table 6, Bartol 2015)
         k_x0x1=2.0e8, k_x1x0=83.7,
         k_x1x2=1.0e8, k_x2x1=167.4,
-        k_x2y2=0.6, k_y2x2=0.097,
-        k_y2y1=60.04, k_y1y2=6.0,
+        k_x2y2=0.6, k_y2x2=0.097,   # Higgins 2006 k_-2 = 0.97 s^-1
+        k_y2y1=60.04, k_y1y2=6.0, # Bartol assumed [Ca_ER] = 60 uM
         k_y1y0=30.02, k_y0y1=12.0,
         k_y0x0=0.4, k_x0y0=1.2e-3,
         # Leak calibration:

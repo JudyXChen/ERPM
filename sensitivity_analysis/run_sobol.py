@@ -88,9 +88,8 @@ def main(argv=None):
         json_name = "sobol_indices.json"
 
         def plot(out):
-            from .plots import plot_grouped_sobol, plot_grouped_sobol_heatmap
-            plot_grouped_sobol(results, out)
-            plot_grouped_sobol_heatmap(results, out)
+            from .plots import plot_grouped
+            plot_grouped(results, out)
     else:
         out_dir = a.out or f"results/sensitivity/within_{'_'.join(a.groups)}"
         json_name = "within_sobol_indices.json"

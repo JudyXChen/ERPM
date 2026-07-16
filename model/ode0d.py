@@ -287,16 +287,24 @@ def _solve_with_pulses(rhs_fun, t_span, y0, *, method, t_eval, args,
 def run(glu_freq=1.0, glu_pulses=1, glu_molecules=stimulus.GLUT_BOLUS_MOLECULES,
         glu_conc=None, v_rest=-65.0, clamp_mV=None, final_t=0.5,
         out="results/ode0d", n_points=200, method="BDF", include_soce=False,
-        glu_trains=1, train_interval=1.0):
+        glu_trains=1, train_interval=1.0, t_stim=0.0, param_overrides=None):
     p = default_parameters()
 
-    # --- glutamate: one or more trains of identical pulse resets.
-    # Each train is glu_pulses at glu_freq; train k starts at k*train_interval.
+    # Apply any parameter overrides, keeping V_spine_L (liters) in sync with
+    # V_spine (um^3) so the N/(N_A*V) scalings hold.
+    if param_overrides:
+        for k, v in param_overrides.items():
+            setattr(p, k, float(v))
+        p.V_spine_L = float(p.V_spine) * 1e-15
+
+    # --- glutamate: one or more trains of identical pulse resets, the first
+    # train starting at t_stim. Each train is glu_pulses at glu_freq; train k
+    # starts at t_stim + k*train_interval.
     pulse_times = []
     for k in range(int(glu_trains)):
         pulse_times.extend(
             stimulus.release_times(glu_freq, glu_pulses,
-                                   t_stim=k * train_interval))
+                                   t_stim=t_stim + k * train_interval))
     pulse_times = sorted(pulse_times)
     if not pulse_times:
         pulse_amount = 0.0
@@ -304,7 +312,10 @@ def run(glu_freq=1.0, glu_pulses=1, glu_molecules=stimulus.GLUT_BOLUS_MOLECULES,
         pulse_amount = float(glu_conc)
     else:
         pulse_amount = stimulus.molecules_to_conc(glu_molecules, p)
-    p.Glu_init = pulse_amount if pulse_times else 0.0
+    # A release at t=0 is set as the initial condition; later releases (and a
+    # delayed first release at t_stim>0) are applied as resets during the solve.
+    first_at_zero = bool(pulse_times) and abs(pulse_times[0]) < 1e-12
+    p.Glu_init = pulse_amount if first_at_zero else 0.0
 
     # --- voltage: each glutamate release evokes an EPSP+bAP, unless we clamp
     if clamp_mV is None:
@@ -324,7 +335,7 @@ def run(glu_freq=1.0, glu_pulses=1, glu_molecules=stimulus.GLUT_BOLUS_MOLECULES,
     sol = _solve_with_pulses(
         rhs, (0.0, final_t), y0, method=method, t_eval=t_eval,
         args=(compiled, vfun),
-        pulse_times=pulse_times[1:], extra_boundaries=onsets,
+        pulse_times=pulse_times, extra_boundaries=onsets,
         pulse_amount=pulse_amount, glu_idx=glu_idx, reset_pulse=True,
     )
     if not sol.success:
@@ -390,12 +401,25 @@ def main(argv=None):
     ap.add_argument("--train-interval", type=float, default=1.0,
                     dest="train_interval",
                     help="seconds between the start of successive trains")
+    ap.add_argument("--t-stim", type=float, default=0.0, dest="t_stim",
+                    help="time (s) of the first glutamate release (default 0)")
+    ap.add_argument("--set", action="append", default=[], dest="overrides",
+                    metavar="KEY=VAL",
+                    help="override a model parameter, e.g. --set N_Orai1=50 "
+                         "(repeatable)")
     a = ap.parse_args(argv)
+    overrides = {}
+    for kv in a.overrides:
+        key, sep, val = kv.partition("=")
+        if not sep:
+            ap.error(f"--set expects KEY=VAL, got {kv!r}")
+        overrides[key.strip()] = float(val)
     run(glu_freq=a.glu_freq, glu_pulses=a.glu_pulses,
         glu_molecules=a.glu_molecules, glu_conc=a.glu_conc,
         v_rest=a.v_rest, clamp_mV=a.clamp, final_t=a.final_t, out=a.out,
         n_points=a.n_points, method=a.method, include_soce=a.soce,
-        glu_trains=a.glu_trains, train_interval=a.train_interval)
+        glu_trains=a.glu_trains, train_interval=a.train_interval,
+        t_stim=a.t_stim, param_overrides=overrides)
 
 
 if __name__ == "__main__":

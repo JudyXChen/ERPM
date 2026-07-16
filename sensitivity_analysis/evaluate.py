@@ -38,6 +38,11 @@ STIM_QOI_NAMES = (
     "cicr_gain",          # ER-release share of total Ca influx (dimensionless)
 )
 
+# Two readable QoI families for plotting: the cytosolic-Ca transient features
+# vs the per-pathway flux / channel-activation indices.
+CA_QOI_NAMES = STIM_QOI_NAMES[:6]    # ca_cyto_* transient shape
+FLUX_QOI_NAMES = STIM_QOI_NAMES[6:]  # peak open fractions, q_*, cicr_gain
+
 # Stable QoI ordering. Downstream code indexes Y by these names.
 QOI_NAMES = (
     "net_drain",      # resting net dCa_ER/dt (M/s); <0 means draining

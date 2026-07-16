@@ -35,10 +35,11 @@ def load(csv_path):
     return header, {h: data[:, i] for i, h in enumerate(header)}
 
 
-def plot_one(out_dir, t_ms, y, filename, ylabel, color, scale=1.0):
+def plot_one(out_dir, t_axis, y, filename, ylabel, color, scale=1.0,
+             xlabel="t (ms)"):
     fig, ax = plt.subplots(figsize=plot_style.FIGSIZE)
-    ax.plot(t_ms, y * scale, color=color)
-    ax.set(xlabel="t (ms)", ylabel=ylabel)
+    ax.plot(t_axis, y * scale, color=color)
+    ax.set(xlabel=xlabel, ylabel=ylabel)
     plot_style.format_axis(ax)
     fig.tight_layout()
     path = out_dir / filename
@@ -47,15 +48,15 @@ def plot_one(out_dir, t_ms, y, filename, ylabel, color, scale=1.0):
     return path
 
 
-def plot_stimulus(out_dir, t_ms, vm, glu):
+def plot_stimulus(out_dir, t_axis, vm, glu, xlabel="t (ms)"):
     """V_m and glutamate as two stacked subplots in stimulus.png."""
     w, h = plot_style.FIGSIZE
     fig, (ax_g, ax_v) = plt.subplots(
         2, 1, sharex=True, figsize=(w, 1.6 * h))
-    ax_g.plot(t_ms, glu * UM, color=plot_style.color_for("Glu"))
+    ax_g.plot(t_axis, glu * UM, color=plot_style.color_for("Glu"))
     ax_g.set(ylabel="Glu (µM)")
-    ax_v.plot(t_ms, vm, color=plot_style.color_for("V_m"))
-    ax_v.set(xlabel="t (ms)", ylabel="V_m (mV)")
+    ax_v.plot(t_axis, vm, color=plot_style.color_for("V_m"))
+    ax_v.set(xlabel=xlabel, ylabel="V_m (mV)")
     for ax in (ax_g, ax_v):
         plot_style.format_axis(ax)
     fig.tight_layout()
@@ -148,38 +149,41 @@ def _time_window(col, t_min_ms, t_max_ms):
     return t_ms[mask], mask
 
 
-def main(out_dir, t_min_ms=0.0, t_max_ms=50.0):
+def main(out_dir, t_min_ms=0.0, t_max_ms=50.0, x_unit="ms"):
     out_dir = pathlib.Path(out_dir)
     _header, col = load(out_dir / "traces.csv")
     t_ms, plot_mask = _time_window(col, t_min_ms, t_max_ms)
+    # Time axis in the requested display unit (window args stay in ms).
+    t_axis = t_ms if x_unit == "ms" else t_ms / 1e3
+    xlabel = f"t ({x_unit})"
 
     written = []
     if "V_m" in col and "Glu" in col:
         written.append(
-            plot_stimulus(out_dir, t_ms, col["V_m"][plot_mask],
-                          col["Glu"][plot_mask])
+            plot_stimulus(out_dir, t_axis, col["V_m"][plot_mask],
+                          col["Glu"][plot_mask], xlabel=xlabel)
         )
     if "Ca_c" in col:
         ca_c = col["Ca_c"][plot_mask]
         written.append(
-            plot_one(out_dir, t_ms, ca_c, "Ca_cyto.png",
+            plot_one(out_dir, t_axis, ca_c, "Ca_cyto.png",
                      r"$[Ca^{2+}]_{cyto}$ (µM)",
                      color=plot_style.color_for("Ca_c"),
-                     scale=UM)
+                     scale=UM, xlabel=xlabel)
         )
         ca_c_max = np.max(ca_c)
         if ca_c_max > 0.0:
             written.append(
-                plot_one(out_dir, t_ms, ca_c / ca_c_max,
+                plot_one(out_dir, t_axis, ca_c / ca_c_max,
                          "Ca_cyto_norm.png",
                          r"Normalized $[Ca^{2+}]_{cyto}$",
-                         color=plot_style.color_for("Ca_c")))
+                         color=plot_style.color_for("Ca_c"), xlabel=xlabel))
     if "Ca_ER" in col:
         written.append(
-            plot_one(out_dir, t_ms, col["Ca_ER"][plot_mask], "Ca_ER.png",
+            plot_one(out_dir, t_axis, col["Ca_ER"][plot_mask], "Ca_ER.png",
                      r"$[Ca^{2+}]_{ER}$ (µM)",
                      color=plot_style.color_for("Ca_ER"),
-                     scale=UM)
+                     scale=UM, xlabel=xlabel)
         )
 
     written.extend(write_open_channel_tables(out_dir, col))
@@ -192,5 +196,8 @@ if __name__ == "__main__":
     parser.add_argument("out_dir", nargs="?", default="results/ode0d")
     parser.add_argument("--t-min-ms", type=float, default=0.0)
     parser.add_argument("--t-max-ms", type=float, default=50.0)
+    parser.add_argument("--x-unit", choices=["ms", "s"], default="ms",
+                        help="x-axis time unit (window args stay in ms)")
     args = parser.parse_args()
-    main(args.out_dir, t_min_ms=args.t_min_ms, t_max_ms=args.t_max_ms)
+    main(args.out_dir, t_min_ms=args.t_min_ms, t_max_ms=args.t_max_ms,
+         x_unit=args.x_unit)
