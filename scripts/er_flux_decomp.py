@@ -23,20 +23,20 @@ from model.parameters import default_parameters
 # ---- reaction -> budget-category maps ------------------------------------
 def cat_cyto(nm):
     if nm in ("V_Ca_entry", "N_Ca_entry", "SOCE_Ca_entry", "P_leak", "N_leak"):
-        return "PM influx (VSCC+NMDAR+SOCE+leaks)"
+        return "PM influx"
     if nm in ("P_bind", "N_bind"):
-        return "PM efflux (PMCA+NCX)"
+        return "PM efflux"
     if nm in ("S_leak", "RyR_CICR", "IP3R_flux"):
-        return "ER release (leak+RyR+IP3R)"
+        return "ER release"
     if nm in ("S_x_x1", "S_x1_x2"):
-        return "ER uptake (SERCA)"
+        return "ER uptake"
     if nm in ("Bm_bind", "Bf_bind", "PLC_bindCa"):
         return "buffering (Bm+Bf+PLC)"
     if nm.startswith("RyR_act") or nm.startswith("RyR_inact") \
             or nm.startswith("IP3R_J"):
         return "channel-site Ca binding"
     if nm == "Ca_lumped_decay":
-        return "Ca→∅ decay"
+        return "Ca decay"
     return None
 
 
@@ -53,13 +53,13 @@ def cat_er(nm):
 
 
 CYTO_COLORS = {
-    "PM influx (VSCC+NMDAR+SOCE+leaks)": "C0",
-    "PM efflux (PMCA+NCX)": "C3",
-    "ER release (leak+RyR+IP3R)": "C2",
-    "ER uptake (SERCA)": "C1",
+    "PM influx": "C0",
+    "PM efflux": "C3",
+    "ER release": "C2",
+    "ER uptake": "C1",
     "buffering (Bm+Bf+PLC)": "C6",
     "channel-site Ca binding": "C9",
-    "Ca→∅ decay": "C8",
+    "Ca decay": "C8",
 }
 ER_COLORS = {
     "SERCA uptake": "C1",
@@ -76,8 +76,11 @@ def cumtrapz(y, x):
 
 
 def run_trajectory(p, *, include_soce, v_rest, final_t, n_points,
-                   glu_molecules, equilibrate_first, stim_voltage=False):
-    names, y0, compiled, glu_idx = build_system(p, include_soce=include_soce)
+                   glu_molecules, equilibrate_first, stim_voltage=False,
+                   ryr_off=False, ip3r_subunits=False):
+    names, y0, compiled, glu_idx = build_system(
+        p, include_soce=include_soce, ryr_off=ryr_off,
+        ip3r_subunits=ip3r_subunits)
     idx = {n: i for i, n in enumerate(names)}
     # Equilibration always uses the resting clamp; the run uses the EPSP+bAP
     # transient when --stim is set so glutamate/depolarisation raise Ca_c.
@@ -127,7 +130,8 @@ def main(argv=None):
     ap.add_argument("--final-t", type=float, default=2.0)
     ap.add_argument("--n-points", type=int, default=16000)
     ap.add_argument("--v-rest", type=float, default=-65.0)
-    ap.add_argument("--no-soce", action="store_true")
+    ap.add_argument("--soce", action="store_true",
+                    help="include STIM/Orai1 SOCE (default off)")
     ap.add_argument("--glu-molecules", type=float, default=0.0,
                     help="single bolus at t=0 (0 = no stimulus)")
     ap.add_argument("--stim", action="store_true",
@@ -136,18 +140,27 @@ def main(argv=None):
     ap.add_argument("--equilibrate", action="store_true",
                     help="start from the 500 s equilibrated state instead of "
                          "the default initial condition")
+    ap.add_argument("--ryroff", action="store_true",
+                    help="disable the RyR block (no RyR states / CICR)")
+    ap.add_argument("--ip3r-off", action="store_true", dest="ip3r_off",
+                    help="disable IP3R (N_IP3R=0); default keeps IP3R ON")
+    ap.add_argument("--ip3r-subunits", action="store_true", dest="ip3r_subunits",
+                    help="use the explicit 3-subunit / 24-state IP3R instead of "
+                         "the cubed single-subunit P_open")
     ap.add_argument("--out", default="results/Flux/er_cyto_ca_budget_ode.png")
     a = ap.parse_args(argv)
 
-    include_soce = not a.no_soce
+    include_soce = a.soce
     p = default_parameters()
-    p.N_IP3R = 0.0
+    if a.ip3r_off:
+        p.N_IP3R = 0.0
     p.V_spine_L = float(p.V_spine) * 1e-15
 
     _names, idx, compiled, vfun, t, Y = run_trajectory(
         p, include_soce=include_soce, v_rest=a.v_rest, final_t=a.final_t,
         n_points=a.n_points, glu_molecules=a.glu_molecules,
-        equilibrate_first=a.equilibrate, stim_voltage=a.stim)
+        equilibrate_first=a.equilibrate, stim_voltage=a.stim,
+        ryr_off=a.ryroff, ip3r_subunits=a.ip3r_subunits)
 
     Vm = np.array([vfun(tk) for tk in t])
     NA = float(p.N_A)
@@ -194,8 +207,7 @@ def main(argv=None):
     axE.plot(t, er_meas, color="k", lw=2.3, label="Recorded Ca change")
     axE.plot(t, er_sum, color="0.5", lw=1.0, ls="--", label="sum of fluxes")
     axE.axhline(0, color="k", lw=0.6, alpha=0.4)
-    axE.set_title(f"ER lumen Ca  ({tag}, {start}, IP3R off, "
-                  f"SOCE {'on' if include_soce else 'off'})")
+    axE.set_title("ER lumen Ca")
     axE.set_xlabel("time (s)")
     axE.set_ylabel("cumulative Ca into compartment (ions)")
     axE.legend(fontsize=8, loc="best")
@@ -203,9 +215,9 @@ def main(argv=None):
 
     # cytosol
     cy_sum = np.zeros_like(t)
-    order = ["PM influx (VSCC+NMDAR+SOCE+leaks)", "PM efflux (PMCA+NCX)",
-             "ER release (leak+RyR+IP3R)", "ER uptake (SERCA)",
-             "buffering (Bm+Bf+PLC)", "channel-site Ca binding", "Ca→∅ decay"]
+    order = ["PM influx", "PM efflux",
+             "ER release", "ER uptake",
+             "buffering (Bm+Bf+PLC)", "channel-site Ca binding", "Ca decay"]
     for cat in order:
         if cat not in cyto_g:
             continue
@@ -222,7 +234,9 @@ def main(argv=None):
     axC.legend(fontsize=8, loc="best")
     axC.margins(x=0)
 
-    print(f"Scenario: {tag}, {start}, IP3R off, "
+    print(f"Scenario: {tag}, {start}, "
+          f"IP3R {'off' if a.ip3r_off else 'on'}, "
+          f"RyR {'off' if a.ryroff else 'on'}, "
           f"SOCE {'on' if include_soce else 'off'}, t=0..{a.final_t}s")
     print(f"V_cyto={V_cyto_L*1e15:.4f} um^3  V_ER={V_er_L*1e15:.4f} um^3")
     print(f"ER:   N start={N_er[0]:.1f}  end={N_er[-1]:.1f} ions "

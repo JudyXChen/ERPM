@@ -130,3 +130,84 @@ def register(p):
     ]
 
     return species, params, reactions
+
+
+_TRANSITIONS = (
+    ("J1", "000", "100", "a1", "b1", "IP3"),
+    ("J5", "010", "110", "a1", "b1", "IP3"),
+    ("J3", "001", "101", "a3", "b3", "IP3"),
+    ("J7", "011", "111", "a3", "b3", "IP3"),
+    ("J4", "000", "001", "a4", "b4", "Ca_c"),
+    ("J8", "010", "011", "a4", "b4", "Ca_c"),
+    ("J2", "100", "101", "a2", "b2", "Ca_c"),
+    ("J6", "110", "111", "a2", "b2", "Ca_c"),
+    ("J9", "000", "010", "a5", "b5", "Ca_c"),
+    ("J10", "100", "110", "a5", "b5", "Ca_c"),
+    ("J11", "001", "011", "a5", "b5", "Ca_c"),
+    ("J12", "101", "111", "a5", "b5", "Ca_c"),
+)
+
+_STATES = ("000", "100", "010", "001", "110", "101", "011", "111")
+
+
+def register_subunits(p):
+    """IP3R with the 3 subunits of each channel resolved explicitly; the
+    channel conducts only with all three subunits in 110. 
+    """
+
+    erm = "ERm"
+    subunits = (1, 2, 3)
+
+    species = [
+        Species(f"IPR{u}_{s}", 1.0 if s == "000" else 0.0,
+                dimensionless, 0.0, D_unit, erm)
+        for u in subunits for s in _STATES
+    ]
+
+    params = [
+        Parameter("a1", p.a1, dimensionless),
+        Parameter("b1", p.b1, dimensionless),
+        Parameter("a2", p.a2, dimensionless),
+        Parameter("b2", p.b2, dimensionless),
+        Parameter("a3", p.a3, dimensionless),
+        Parameter("b3", p.b3, dimensionless),
+        Parameter("a4", p.a4, dimensionless),
+        Parameter("b4", p.b4, dimensionless),
+        Parameter("a5", p.a5, dimensionless),
+        Parameter("b5", p.b5, dimensionless),
+        Parameter("k_IP3R_flux", p.k_IP3R_flux, dimensionless),
+    ]
+
+    S_IP3R = float(p.N_IP3R) / (float(p.N_A) * float(p.V_spine_L))
+    V_ratio = float(p.V_spine) / float(p.V_ER)
+
+    reactions = []
+    for u in subunits:
+        for tag, s0, s1, kf, kr, lig in _TRANSITIONS:
+            lo, hi = f"IPR{u}_{s0}", f"IPR{u}_{s1}"
+            # IP3 binding consumes IP3; Ca site binding does not deplete Ca_c.
+            lhs = [lo, "IP3"] if lig == "IP3" else [lo]
+            reactions.append(Reaction(
+                f"IP3R_S{u}_{tag}", lhs, [hi],
+                param_map={"kf": kf, "kr": kr},
+                eqn_f_str=f"kf*{lig}*{lo}",
+                eqn_r_str=f"kr*{hi}",
+                species_map={lo: lo, hi: hi, lig: lig},
+                flux_scaling={"IP3": S_IP3R} if lig == "IP3" else {},
+                explicit_restriction_to_domain=erm,
+            ))
+
+    reactions.append(Reaction(
+        "IP3R_flux",
+        ["Ca_ER"], ["Ca_c"],
+        param_map={"k": "k_IP3R_flux"},
+        eqn_f_str="k*IPR1_110*IPR2_110*IPR3_110*(Ca_ER - Ca_c)",
+        species_map={
+            "IPR1_110": "IPR1_110", "IPR2_110": "IPR2_110",
+            "IPR3_110": "IPR3_110", "Ca_c": "Ca_c", "Ca_ER": "Ca_ER",
+        },
+        flux_scaling={"Ca_c": S_IP3R, "Ca_ER": V_ratio * S_IP3R},
+        explicit_restriction_to_domain=erm,
+    ))
+
+    return species, params, reactions

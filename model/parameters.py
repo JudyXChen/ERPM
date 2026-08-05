@@ -40,7 +40,6 @@ def default_parameters():
         # Initial concentrations / extracellular (M)
         Ca_c_init=1.0e-7,
         Ca_ER_init=150e-6,
-
         Ca_ext=2.0e-3,
         IP3_basal=5.0e-8,
         Bm_total=2.0e-5,
@@ -103,22 +102,25 @@ def default_parameters():
         k_P1=1.5e8, k_P2=15.0, k_P3=12.0, k_P_leak=4.3,
         k_NCX1=3.0e8, k_NCX2=300.0, k_NCX3=600.0, k_NCX_leak=19.4,
 
-        # SOCE 
-        K_STIM1=200.0e-6,
+        # SOCE
+        K_STIM1=200,
         tau_STIM1=0.01,
         w_STIM1=1.0,
-        N_Orai1=20.0,
+        N_Orai1=10.0,
         g_Orai1=4.752e-15, # single-channel conductance, S
 
         # SERCA (Table 6, Bartol 2015)
         k_x0x1=2.0e8, k_x1x0=83.7,
         k_x1x2=1.0e8, k_x2x1=167.4,
-        k_x2y2=0.6, k_y2x2=0.097,   # Higgins 2006 k_-2 = 0.97 s^-1
-        k_y2y1=60.04, k_y1y2=6.0, # Bartol assumed [Ca_ER] = 60 uM
-        k_y1y0=30.02, k_y0y1=12.0,
-        k_y0x0=0.4, k_x0y0=1.2e-3,
-        # Leak calibration:
-        k_S_leak=0.1608,
+        # Conformational steps recalibrated for SERCA2b turnover.
+        # k_x2y2=0.6, k_y2x2=0.097 (Bartol)
+        k_x2y2=50.0, k_y2x2=8.083,
+        k_y2y1=60.04, k_y1y2=1.0e5,
+        k_y1y0=30.02, k_y0y1=2.0e5,
+        # k_y0x0=0.4, k_x0y0=1.2e-3 (Bartol)
+        k_y0x0=50.0, k_x0y0=0.15,
+        # Leak rate to balance the pump at rest.
+        k_S_leak=0.1873,
 
         # RyR (Table 6, Tanskanen 2007 / Singh 2021)
         k_AB=3.0e7, k_AU=333.0,

@@ -96,7 +96,7 @@ try:
 except ModuleNotFoundError:
     _install_smart_stub()
 
-from .reactions import BASE_REGISTRARS, SOCE_REGISTRARS
+from .reactions import BASE_REGISTRARS, SOCE_REGISTRARS, ip3r, ryr
 from . import stimulus
 
 VM = sym.Symbol("V_m")
@@ -116,10 +116,23 @@ def _shared_params(p):
     }
 
 
-def build_system(p, *, include_soce=False):
+def build_system(p, *, include_soce=False, ip3r_subunits=False, ryr_off=False,
+                 ip3r_off=False):
     from smart.model_assembly import Reaction  # container objects only
 
     registrars = SOCE_REGISTRARS if include_soce else BASE_REGISTRARS
+    if ryr_off:
+        # Drop the RyR block entirely: its ~100 states and CICR flux vanish, so
+        # the ER membrane sees only SERCA (pump+leak) and IP3R.
+        registrars = tuple(r for r in registrars if r is not ryr.register)
+    if ip3r_off:
+        # Drop the IP3R block entirely: the ER membrane sees only SERCA (pump+leak)
+        # and, unless also disabled, RyR. Used for pure-SERCA refill experiments.
+        registrars = tuple(r for r in registrars
+                           if r not in (ip3r.register, ip3r.register_subunits))
+    if ip3r_subunits:
+        registrars = tuple(ip3r.register_subunits if r is ip3r.register else r
+                           for r in registrars)
     species_init, master, reactions = {}, _shared_params(p), []
     for reg in registrars:
         slist, plist, rlist = reg(p)
@@ -285,9 +298,10 @@ def _solve_with_pulses(rhs_fun, t_span, y0, *, method, t_eval, args,
 
 
 def run(glu_freq=1.0, glu_pulses=1, glu_molecules=stimulus.GLUT_BOLUS_MOLECULES,
-        glu_conc=None, v_rest=-65.0, clamp_mV=None, final_t=0.5,
-        out="results/ode0d", n_points=200, method="BDF", include_soce=False,
-        glu_trains=1, train_interval=1.0, t_stim=0.0, param_overrides=None):
+        v_rest=-65.0, clamp_mV=None, final_t=0.5,
+        out="results/ode0d", n_points=200, include_soce=False,
+        t_stim=0.0, param_overrides=None,
+        ip3r_subunits=False, ryr_off=False):
     p = default_parameters()
 
     # Apply any parameter overrides, keeping V_spine_L (liters) in sync with
@@ -297,19 +311,12 @@ def run(glu_freq=1.0, glu_pulses=1, glu_molecules=stimulus.GLUT_BOLUS_MOLECULES,
             setattr(p, k, float(v))
         p.V_spine_L = float(p.V_spine) * 1e-15
 
-    # --- glutamate: one or more trains of identical pulse resets, the first
-    # train starting at t_stim. Each train is glu_pulses at glu_freq; train k
-    # starts at t_stim + k*train_interval.
-    pulse_times = []
-    for k in range(int(glu_trains)):
-        pulse_times.extend(
-            stimulus.release_times(glu_freq, glu_pulses,
-                                   t_stim=t_stim + k * train_interval))
-    pulse_times = sorted(pulse_times)
+    # --- glutamate: a single train of identical pulse resets starting at
+    # t_stim -- glu_pulses releases at glu_freq.
+    pulse_times = sorted(
+        stimulus.release_times(glu_freq, glu_pulses, t_stim=t_stim))
     if not pulse_times:
         pulse_amount = 0.0
-    elif glu_conc is not None:
-        pulse_amount = float(glu_conc)
     else:
         pulse_amount = stimulus.molecules_to_conc(glu_molecules, p)
     # A release at t=0 is set as the initial condition; later releases (and a
@@ -323,7 +330,9 @@ def run(glu_freq=1.0, glu_pulses=1, glu_molecules=stimulus.GLUT_BOLUS_MOLECULES,
     else:
         volt = stimulus.hold_voltage(clamp_mV)
 
-    names, y0, compiled, _ = build_system(p, include_soce=include_soce)
+    names, y0, compiled, _ = build_system(p, include_soce=include_soce,
+                                          ip3r_subunits=ip3r_subunits,
+                                          ryr_off=ryr_off)
     vfun = _make_voltage(volt)
     glu_idx = names.index("Glu") if "Glu" in names else None
 
@@ -333,7 +342,7 @@ def run(glu_freq=1.0, glu_pulses=1, glu_molecules=stimulus.GLUT_BOLUS_MOLECULES,
 
     t_eval = np.linspace(0.0, final_t, n_points)
     sol = _solve_with_pulses(
-        rhs, (0.0, final_t), y0, method=method, t_eval=t_eval,
+        rhs, (0.0, final_t), y0, method="BDF", t_eval=t_eval,
         args=(compiled, vfun),
         pulse_times=pulse_times, extra_boundaries=onsets,
         pulse_amount=pulse_amount, glu_idx=glu_idx, reset_pulse=True,
@@ -354,13 +363,14 @@ def run(glu_freq=1.0, glu_pulses=1, glu_molecules=stimulus.GLUT_BOLUS_MOLECULES,
             w.writerow([sol.t[k], vm[k]] + list(sol.y[:, k]))
 
     print(f"\n0D reference: {sol.t.size} pts x {len(names)} species "
-          f"-> {csv_path}  (solve_ivp {method}, success={sol.success})")
+          f"-> {csv_path}  (solve_ivp BDF, success={sol.success})")
     v_desc = (f"clamp {clamp_mV} mV" if clamp_mV is not None
               else f"Leung-style transient at {len(pulse_times)} release(s) "
                    f"(V_rest={v_rest} mV)")
     print(f"Stimulus: Glu_pulse={pulse_amount:.3e} M, "
           f"n_releases={len(pulse_times)} @ {glu_freq} Hz, V_m={v_desc}")
     print(f"SOCE: {'enabled' if include_soce else 'disabled'}")
+    print(f"RyR:  {'DISABLED (--ryroff)' if ryr_off else 'enabled'}")
     for sp in ("Glu", "Ca_c", "Ca_ER", "IP3", "P_O_STIM1"):
         if sp in names:
             tr = sol.y[names.index(sp)]
@@ -380,9 +390,6 @@ def main(argv=None):
                     dest="glu_molecules",
                     help="molecules per bolus, converted to spine "
                          "concentration (default 500)")
-    ap.add_argument("--glu-conc", type=float, default=None, dest="glu_conc",
-                    help="concentration (M) per bolus; overrides "
-                         "--glu-molecules")
     ap.add_argument("--v-rest", type=float, default=-65.0, dest="v_rest",
                     help="resting potential (mV); each release adds an "
                          "EPSP+bAP on top")
@@ -391,18 +398,18 @@ def main(argv=None):
                          "release-evoked transient")
     ap.add_argument("--final-t", type=float, default=0.5, dest="final_t")
     ap.add_argument("--n-points", type=int, default=200, dest="n_points")
-    ap.add_argument("--method", default="BDF")
     ap.add_argument("--out", default="results/ode0d")
     ap.add_argument("--soce", action="store_true",
                     help="include STIM/Orai1 SOCE with N_Orai1 from parameters")
-    ap.add_argument("--glu-trains", type=int, default=1, dest="glu_trains",
-                    help="number of pulse trains (each is --glu-pulses at "
-                         "--glu-freq)")
-    ap.add_argument("--train-interval", type=float, default=1.0,
-                    dest="train_interval",
-                    help="seconds between the start of successive trains")
     ap.add_argument("--t-stim", type=float, default=0.0, dest="t_stim",
                     help="time (s) of the first glutamate release (default 0)")
+    ap.add_argument("--ip3r-subunits", action="store_true",
+                    dest="ip3r_subunits",
+                    help="use the explicit 3-subunit IP3R (24 states) instead "
+                         "of the cubed single-subunit P_open")
+    ap.add_argument("--ryroff", action="store_true", dest="ryr_off",
+                    help="disable the RyR block entirely (no RyR states, no "
+                         "CICR flux); ER membrane keeps only SERCA and IP3R")
     ap.add_argument("--set", action="append", default=[], dest="overrides",
                     metavar="KEY=VAL",
                     help="override a model parameter, e.g. --set N_Orai1=50 "
@@ -415,11 +422,11 @@ def main(argv=None):
             ap.error(f"--set expects KEY=VAL, got {kv!r}")
         overrides[key.strip()] = float(val)
     run(glu_freq=a.glu_freq, glu_pulses=a.glu_pulses,
-        glu_molecules=a.glu_molecules, glu_conc=a.glu_conc,
+        glu_molecules=a.glu_molecules,
         v_rest=a.v_rest, clamp_mV=a.clamp, final_t=a.final_t, out=a.out,
-        n_points=a.n_points, method=a.method, include_soce=a.soce,
-        glu_trains=a.glu_trains, train_interval=a.train_interval,
-        t_stim=a.t_stim, param_overrides=overrides)
+        n_points=a.n_points, include_soce=a.soce,
+        t_stim=a.t_stim, param_overrides=overrides,
+        ip3r_subunits=a.ip3r_subunits, ryr_off=a.ryr_off)
 
 
 if __name__ == "__main__":
