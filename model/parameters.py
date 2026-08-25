@@ -41,7 +41,7 @@ def default_parameters():
         Ca_c_init=1.0e-7,
         Ca_ER_init=150e-6,
         Ca_ext=2.0e-3,
-        IP3_basal=5.0e-8,
+        IP3_basal=2.0e-8,
         Bm_total=2.0e-5,
         Bf_total=Bf_total,
         mGluR_total=1.0,
@@ -103,7 +103,8 @@ def default_parameters():
         k_NCX1=3.0e8, k_NCX2=300.0, k_NCX3=600.0, k_NCX_leak=19.4,
 
         # SOCE
-        K_STIM1=200,
+        # Half-activation store concentration (200 uM, expressed in M).
+        K_STIM1=200e-6,
         tau_STIM1=0.01,
         w_STIM1=1.0,
         N_Orai1=10.0,
@@ -120,7 +121,7 @@ def default_parameters():
         # k_y0x0=0.4, k_x0y0=1.2e-3 (Bartol)
         k_y0x0=50.0, k_x0y0=0.15,
         # Leak rate to balance the pump at rest.
-        k_S_leak=0.1873,
+        k_S_leak=0, # 0.1873,
 
         # RyR (Table 6, Tanskanen 2007 / Singh 2021)
         k_AB=3.0e7, k_AU=333.0,
