@@ -4,6 +4,9 @@
 import argparse
 import json
 import pathlib
+import re
+
+from scripts import plot_style
 
 import numpy as np
 
@@ -17,6 +20,7 @@ def _mpl():
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
+    plot_style.apply_style(plt)
     return plt
 
 
@@ -55,60 +59,58 @@ def _stack(results, key, n_rows, qois):
     return np.array([[results[q][key][i] for q in qois] for i in range(n_rows)])
 
 
+def _slug(value):
+    return re.sub(r"[^a-z0-9]+", "_", value.lower()).strip("_")
+
+
 def _sobol_heatmap(rows, qois, panels, out_path, cell_w=0.62):
-    """Shared renderer: one viridis panel per (label, matrix, vmax). cell_w is
-    the per-QoI column width (inches); shrink it to tighten a wide figure."""
-    plt = _mpl()
-    n = len(rows)
-    labels = [_qoi_label(q) for q in qois]
-    fig, axes = plt.subplots(
-        1, len(panels),
-        figsize=(cell_w * len(qois) * len(panels) + 2, 0.42 * n + 2.2),
-        squeeze=False)
-    for ax, (lab, M, vmax) in zip(axes[0], panels):
-        im = ax.imshow(M, aspect="auto", cmap="viridis", vmin=0.0, vmax=vmax)
-        ax.set_xticks(range(len(qois)))
-        ax.set_xticklabels(labels, rotation=45, ha="right", fontsize=8)
-        ax.set_yticks(range(n))
-        ax.set_yticklabels(rows, fontsize=8)
-        ax.set_title(lab, fontsize=10)
-        for r in range(n):
-            for c in range(len(qois)):
-                v = M[r, c]
-                if not np.isfinite(v):
-                    continue
-                ax.text(c, r, f"{v:.2f}", ha="center", va="center", fontsize=6.5,
-                        color="white" if v / max(vmax, 1e-9) > 0.55 else "black")
-        fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
-    fig.tight_layout()
-    fig.savefig(out_path, dpi=140)
-    plt.close(fig)
+    """Fixed-size pages of at most six rows and three QoIs; never shrink fonts.
+
+    cell_w is retained for compatibility; physical panel size is standardized.
+    """
+    _mpl()
+    for lab, matrix, vmax in panels:
+        for r0 in range(0, len(rows), 6):
+            for c0 in range(0, len(qois), 3):
+                fig, ax = plot_style.figure()
+                values = matrix[r0:r0+6, c0:c0+3]
+                im = ax.imshow(values, aspect="auto", cmap=plot_style.blue_colormap(),
+                               vmin=0, vmax=vmax)
+                ax.set_xticks(range(values.shape[1]),
+                              [_qoi_label(q) for q in qois[c0:c0+3]],
+                              rotation=45, ha="right")
+                ax.set_yticks(range(values.shape[0]), rows[r0:r0+6])
+                for r in range(values.shape[0]):
+                    for c in range(values.shape[1]):
+                        value = values[r, c]
+                        if np.isfinite(value):
+                            ax.text(c, r, f"{value:.2f}", ha="center", va="center",
+                                    color="white" if value / max(vmax, 1e-9) > 0.65
+                                    else plot_style.COLORS["default"])
+                colorbar = fig.colorbar(im, ax=ax, fraction=0.06, pad=0.05)
+                colorbar.set_label(lab)
+                suffix = f"{_slug(lab)}_r{r0//6+1}_c{c0//3+1}"
+                plot_style.save(fig, plot_style.panel_path(out_path, suffix))
 
 
 def plot_grouped_sobol(results, out_dir, panel_w=3.2, name="grouped_sobol.png"):
-    """S1/ST grouped-bar chart per QoI."""
-    plt = _mpl()
+    """One horizontal S1/ST grouped-bar panel per QoI, with a shared legend."""
+    _mpl()
     out_dir = pathlib.Path(out_dir)
-    qois = list(results)
-    fig, axes = plt.subplots(1, len(qois), figsize=(panel_w * len(qois), 4.6),
-                             squeeze=False)
-    for ax, qoi in zip(axes[0], qois):
-        r = results[qoi]
+    for qoi, r in results.items():
+        fig, ax = plot_style.figure()
         order = np.argsort(r["ST"])[::-1]
-        g = [r["groups"][i] for i in order]
-        x = np.arange(len(g))
-        ax.bar(x - 0.2, [r["S1"][i] for i in order], 0.4, label="S1",
-               color="#2c7fb8")
-        ax.bar(x + 0.2, [r["ST"][i] for i in order], 0.4, label="ST",
-               color="#d7301f")
-        ax.set_xticks(x)
-        ax.set_xticklabels(g, rotation=45, ha="right", fontsize=8)
-        ax.set_ylabel("Sobol index")
-        ax.set_title(_qoi_label(qoi))
-        ax.legend(fontsize=8)
-    fig.tight_layout()
-    fig.savefig(out_dir / name, dpi=140)
-    plt.close(fig)
+        groups = [r["groups"][i] for i in order]
+        y = np.arange(len(groups))
+        ax.barh(y - 0.2, [r["S1"][i] for i in order], 0.4, label="S1",
+                color=plot_style.shade("blue"))
+        ax.barh(y + 0.2, [r["ST"][i] for i in order], 0.4, label="ST",
+                color=plot_style.shade("purple"))
+        ax.set_yticks(y, groups)
+        ax.invert_yaxis()
+        ax.set_xlabel("Sobol index")
+        plot_style.save(fig, plot_style.panel_path(out_dir / name, qoi),
+                        legend_name="sobol_legend.png", ncol=2)
 
 
 def plot_grouped_sobol_heatmap(results, out_dir, title="", cell_w=0.62,
@@ -151,7 +153,7 @@ def plot_grouped(results, out_dir, *, cell_w=0.62, bar=True):
                                    name=f"grouped_sobol_heatmap{sfx}.png")
         if bar:
             plot_grouped_sobol(sub, out_dir, name=f"grouped_sobol{sfx}.png")
-        print(f"  [{tag}] {len(sub)} QoIs -> grouped_sobol_heatmap{sfx}.png")
+        print(f"  [{tag}] {len(sub)} QoIs -> grouped_sobol_heatmap{sfx}_*.png")
 
 
 def plot_within_sobol_heatmap(results, names, out_dir, title=""):
@@ -171,25 +173,19 @@ def plot_within_sobol_heatmap(results, names, out_dir, title=""):
 
 
 def plot_morris(results, out_dir):
-    """mu*-sigma scatter per QoI, labelling the most influential parameters."""
-    plt = _mpl()
+    """One mu*-sigma panel per QoI; numbered top-five markers avoid text overlap."""
+    _mpl()
     out_dir = pathlib.Path(out_dir)
-    qois = list(results)
-    fig, axes = plt.subplots(1, len(qois), figsize=(5.2 * len(qois), 4.8),
-                             squeeze=False)
-    for ax, qoi in zip(axes[0], qois):
-        r = results[qoi]
-        mu, sig, names = r["mu_star"], r["sigma"], r["names"]
-        ax.scatter(mu, sig, s=18, color="#2c7fb8")
-        for i in np.argsort(mu)[::-1][:8]:
-            ax.annotate(names[i], (mu[i], sig[i]), fontsize=7,
-                        xytext=(3, 3), textcoords="offset points")
-        ax.set_xlabel(r"$\mu^*$")
-        ax.set_ylabel(r"$\sigma$")
-        ax.set_title(_qoi_label(qoi))
-    fig.tight_layout()
-    fig.savefig(out_dir / "morris_mu_sigma.png", dpi=140)
-    plt.close(fig)
+    for qoi, r in results.items():
+        fig, ax = plot_style.figure()
+        mu, sig, names = np.array(r["mu_star"]), np.array(r["sigma"]), r["names"]
+        ax.scatter(mu, sig, s=plot_style.MARKER_SIZE, color=plot_style.shade("blue", "light"))
+        for rank, i in enumerate(np.argsort(mu)[::-1][:5], 1):
+            ax.scatter(mu[i], sig[i], marker=f"${rank}$", s=81,
+                       color=plot_style.shade("blue", "dark"), label=names[i])
+        ax.margins(0.12)
+        ax.set(xlabel=r"$\mu^*$", ylabel=r"$\sigma$")
+        plot_style.save(fig, out_dir / f"morris_mu_sigma_{qoi}.png")
 
 
 def main(argv=None):
@@ -203,7 +199,7 @@ def main(argv=None):
     ap.add_argument("--tag", default="custom",
                     help="filename suffix for the --qois figure")
     ap.add_argument("--cell-w", type=float, default=0.62,
-                    help="per-QoI column width (inches) in the heatmap")
+                    help="deprecated compatibility flag; panels are fixed at 3 × 3 inches")
     ap.add_argument("--no-bar", action="store_true",
                     help="skip the S1/ST bar chart, heatmaps only")
     a = ap.parse_args(argv)
@@ -223,7 +219,7 @@ def main(argv=None):
                                    name=f"grouped_sobol_heatmap_{a.tag}.png")
         if not a.no_bar:
             plot_grouped_sobol(sub, out_dir, name=f"grouped_sobol_{a.tag}.png")
-        print(f"  [{a.tag}] {len(sub)} QoIs -> grouped_sobol_heatmap_{a.tag}.png")
+        print(f"  [{a.tag}] {len(sub)} QoIs -> grouped_sobol_heatmap_{a.tag}_*.png")
     else:
         plot_grouped(results, out_dir, cell_w=a.cell_w, bar=not a.no_bar)
     print(f"-> {out_dir}/")

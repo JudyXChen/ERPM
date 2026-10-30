@@ -42,7 +42,7 @@ def default_parameters():
         Ca_c_init=1.0e-7,
         Ca_ER_init=150e-6,
         Ca_ext=2.0e-3,
-        IP3_basal=2.0e-8,
+        IP3_basal=5.0e-8,
         Bm_total=2.0e-5,
         Bf_total=Bf_total,
         mGluR_total=1.0,
@@ -50,7 +50,7 @@ def default_parameters():
         glu_clearance_rate=200.0,
         Glu_init=0.0,
         N_NMDAR=35.0,
-        N_VSCC=1.0, # check
+        N_VSCC=7.0,  # Calibrated to Benedetti 2025 Fig 7B; 2/um2 density would give 14.
         N_PMCA=7165.0,
         N_NCX=1019.0,
         N_SERCA=1284.0,
@@ -101,12 +101,12 @@ def default_parameters():
 
         # PMCA / NCX (Table 5, Bartol 2015)
         k_P1=1.5e8, k_P2=15.0, k_P3=12.0,
-        k_P_leak=7.0485763929936835,  # scripts/calibrate_rest.py; Bartol's 4.3 is per total pump.
+        k_P_leak=6.832288382768589,  # scripts/calibrate_rest.py; Bartol's 4.3 is per total pump.
         k_NCX1=3.0e8, k_NCX2=300.0, k_NCX3=600.0,
-        k_NCX_leak=21.14572917898105,  # scripts/calibrate_rest.py; Bartol's 19.4 is per total pump.
+        k_NCX_leak=20.496865148305766,  # scripts/calibrate_rest.py; Bartol's 19.4 is per total pump.
 
         # SOCE
-        K_STIM1=37.5e-6,  # Francis SI: 0.25 * 150 uM resting store.
+        K_STIM1=60e-6,  # About 0.42 * rest, the ratio in Luik 2008 (169 uM at 400 uM ER).
         tau_STIM1=5.0,  # Effective seconds-scale recruitment.
         w_STIM1=1.0,
         N_Orai1=10.0,
@@ -125,10 +125,10 @@ def default_parameters():
         # Leak rate to balance the pump at rest.
         k_S_leak=0, # 0.1873,
         # Separate leak for the Gq-PLC pathway.
-        k_S_leak_gq=0.15248167875230853,  # scripts/calibrate_rest.py: Ca_c 100 nM, ER 150 uM.
+        k_S_leak_gq=0.13107465373670635,  # scripts/calibrate_rest.py: Ca_c 100 nM, ER 150 uM.
 
         # RyR (Table 6, Tanskanen 2007 / Singh 2021)
-        k_AB=3.0e7, k_AU=60.0,  # Provisional bulk-Ca affinity Kd=2 uM; original=333.
+        k_AB=3.0e7, k_AU=333.0,
         k_IC=4.5e5, k_IO=2.5e5, k_IU=1.0,
         alpha_RyR=650.0, beta_RyR=60.0,
         delta_prime=600.0, delta_RyR=75.0, gamma_RyR=5.0,
@@ -167,8 +167,8 @@ def default_parameters():
         plc_gq_kcat15=0.333, plc_gq_km15=2587.0,
         plc_gq_pip2_density=4000.0,  # molecules/um2, fixed reservoir.
         plc_gq_total_density=10047.8611584221,
-        plc_gq_k16=0.125,
-        plc_gq_r15_scale=0.38157369819818043,
+        plc_gq_k16=0.5,  # Effective: metabolism (0.125, Calizo) plus estimated diffusion out of the segment.
+        plc_gq_r15_scale=3.8157369824006895,
 
         plc_gq_eta=1.0,
         plc_gq_k_act=1.291678304,  # s^-1

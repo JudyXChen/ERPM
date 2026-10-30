@@ -116,7 +116,8 @@ def register(p):
                     )
                 )
 
-    # CI <-> OI gating: alpha forward, bta reverse, all (ja, ji).
+    # CI -> OI requires four activating Ca, matching C -> O.
+    # OI -> CI closure remains possible at every activation occupancy.
     for ja in range(5):
         for ji in range(5):
             ci = _state_name("CI", ja, ji)
@@ -126,7 +127,7 @@ def register(p):
                     f"RyR_CIOI_{ja}{ji}",
                     [ci], [oi],
                     param_map={"alpha": "alpha_RyR", "bta": "beta_RyR"},
-                    eqn_f_str=f"alpha*{ci}",
+                    eqn_f_str=f"alpha*{ci}" if ja == 4 else "0",
                     eqn_r_str=f"bta*{oi}",
                     species_map={ci: ci, oi: oi},
                     explicit_restriction_to_domain=erm,
