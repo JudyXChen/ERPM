@@ -96,7 +96,7 @@ try:
 except ModuleNotFoundError:
     _install_smart_stub()
 
-from .reactions import BASE_REGISTRARS, SOCE_REGISTRARS, ip3r, ryr
+from .reactions import ip3r, registrars_for, ryr
 from . import stimulus
 
 VM = sym.Symbol("V_m")
@@ -117,10 +117,10 @@ def _shared_params(p):
 
 
 def build_system(p, *, include_soce=False, ip3r_subunits=False, ryr_off=False,
-                 ip3r_off=False):
+                 ip3r_off=False, plc="new"):
     from smart.model_assembly import Reaction  # container objects only
 
-    registrars = SOCE_REGISTRARS if include_soce else BASE_REGISTRARS
+    registrars = registrars_for(plc=plc, include_soce=include_soce)
     if ryr_off:
         # Drop the RyR block entirely: its ~100 states and CICR flux vanish, so
         # the ER membrane sees only SERCA (pump+leak) and IP3R.
@@ -227,6 +227,38 @@ def rhs(t, y, compiled, vfun, source_fun=None, source_idx=None):
     return d
 
 
+def equilibrate_state(y0, compiled, vfun, *, names=(), chunk_s=50.0,
+                      max_time_s=2000.0, rtol=1e-9, atol=1e-14):
+    """Integrate at rest until calcium and all other derivatives settle."""
+    y = np.asarray(y0, dtype=float).copy()
+    ca = [i for i, name in enumerate(names) if name in {"Ca_c", "Ca_ER"}]
+    other = [i for i in range(y.size) if i not in ca]
+    stable = 0
+    elapsed = 0.0
+    while elapsed < max_time_s:
+        end = min(elapsed + chunk_s, max_time_s)
+        sol = solve_ivp(
+            rhs, (elapsed, end), y, method="BDF", t_eval=[end],
+            args=(compiled, vfun), rtol=rtol, atol=atol)
+        if not sol.success:
+            raise RuntimeError(f"equilibration failed: {sol.message}")
+        y = sol.y[:, -1]
+        deriv = rhs(end, y, compiled, vfun)
+        ca_rel = max((abs(deriv[i]) / max(abs(y[i]), 1e-12)
+                      for i in ca), default=0.0)
+        other_abs = max((abs(deriv[i]) for i in other), default=0.0)
+        stable = stable + 1 if ca_rel < 1e-6 and other_abs < 1e-9 else 0
+        elapsed = end
+        if stable == 2:
+            return types.SimpleNamespace(
+                state=y, time_s=elapsed, derivative=deriv,
+                ca_relative_rate_s=ca_rel, other_rate=other_abs,
+                converged=True)
+    return types.SimpleNamespace(
+        state=y, time_s=elapsed, derivative=deriv,
+        ca_relative_rate_s=ca_rel, other_rate=other_abs, converged=False)
+
+
 def _solve_with_pulses(rhs_fun, t_span, y0, *, method, t_eval, args,
                        pulse_times=(), pulse_amount=0.0, glu_idx=None,
                        reset_pulse=True,
@@ -262,7 +294,7 @@ def _solve_with_pulses(rhs_fun, t_span, y0, *, method, t_eval, args,
             continue
         sol = solve_ivp(
             rhs_fun, (t0, boundary), y, method=method, t_eval=seg_eval,
-            args=args, rtol=rtol, atol=atol,
+            args=args, rtol=rtol, atol=atol, dense_output=True,
         )
         success = success and sol.success
         if not sol.success:
@@ -272,7 +304,7 @@ def _solve_with_pulses(rhs_fun, t_span, y0, *, method, t_eval, args,
         if sol_t.size:
             all_t.append(sol_t)
             all_y.append(sol_y)
-            y = sol_y[:, -1].copy()
+            y = sol.sol(boundary).copy()
         else:
             fallback = solve_ivp(
                 rhs_fun, (t0, boundary), y, method=method, t_eval=[boundary],
@@ -301,7 +333,8 @@ def run(glu_freq=1.0, glu_pulses=1, glu_molecules=stimulus.GLUT_BOLUS_MOLECULES,
         v_rest=-65.0, clamp_mV=None, final_t=0.5,
         out="results/ode0d", n_points=200, include_soce=False,
         t_stim=0.0, param_overrides=None,
-        ip3r_subunits=False, ryr_off=False):
+        ip3r_subunits=False, ryr_off=False, plc="new",
+        equilibrate_first=False):
     p = default_parameters()
 
     # Apply any parameter overrides, keeping V_spine_L (liters) in sync with
@@ -332,9 +365,25 @@ def run(glu_freq=1.0, glu_pulses=1, glu_molecules=stimulus.GLUT_BOLUS_MOLECULES,
 
     names, y0, compiled, _ = build_system(p, include_soce=include_soce,
                                           ip3r_subunits=ip3r_subunits,
-                                          ryr_off=ryr_off)
+                                          ryr_off=ryr_off, plc=plc)
     vfun = _make_voltage(volt)
     glu_idx = names.index("Glu") if "Glu" in names else None
+
+    equilibrium = None
+    if equilibrate_first:
+        if glu_idx is not None:
+            y0[glu_idx] = 0.0
+        rest_v = clamp_mV if clamp_mV is not None else v_rest
+        max_equilibration_s = 2000.0
+        equilibrium = equilibrate_state(
+            y0, compiled, _make_voltage(rest_v), names=names,
+            max_time_s=max_equilibration_s)
+        if not equilibrium.converged:
+            raise RuntimeError(
+                f"resting state did not converge by {max_equilibration_s:g} s")
+        y0 = equilibrium.state.copy()
+        if first_at_zero and glu_idx is not None:
+            y0[glu_idx] = pulse_amount
 
     # Restart the integrator at each sharp V_m onset (EPSP and bAP) so it does
     # not step over the kinks; no transient onsets when V_m is clamped.
@@ -371,6 +420,10 @@ def run(glu_freq=1.0, glu_pulses=1, glu_molecules=stimulus.GLUT_BOLUS_MOLECULES,
           f"n_releases={len(pulse_times)} @ {glu_freq} Hz, V_m={v_desc}")
     print(f"SOCE: {'enabled' if include_soce else 'disabled'}")
     print(f"RyR:  {'DISABLED (--ryroff)' if ryr_off else 'enabled'}")
+    print(f"PLC:  {plc}")
+    if equilibrium:
+        print(f"Equilibrated: {equilibrium.time_s:g} s, "
+              f"Ca relative rate={equilibrium.ca_relative_rate_s:.2e} s^-1")
     for sp in ("Glu", "Ca_c", "Ca_ER", "IP3", "P_O_STIM1"):
         if sp in names:
             tr = sol.y[names.index(sp)]
@@ -410,6 +463,10 @@ def main(argv=None):
     ap.add_argument("--ryroff", action="store_true", dest="ryr_off",
                     help="disable the RyR block entirely (no RyR states, no "
                          "CICR flux); ER membrane keeps only SERCA and IP3R")
+    ap.add_argument("--plc", choices=("old", "new"), default="new",
+                    help="PLC pathway implementation (default: new)")
+    ap.add_argument("--equilibrate-first", action="store_true",
+                    help="converge the no-stimulus resting state before the run")
     ap.add_argument("--set", action="append", default=[], dest="overrides",
                     metavar="KEY=VAL",
                     help="override a model parameter, e.g. --set N_Orai1=50 "
@@ -426,7 +483,8 @@ def main(argv=None):
         v_rest=a.v_rest, clamp_mV=a.clamp, final_t=a.final_t, out=a.out,
         n_points=a.n_points, include_soce=a.soce,
         t_stim=a.t_stim, param_overrides=overrides,
-        ip3r_subunits=a.ip3r_subunits, ryr_off=a.ryr_off)
+        ip3r_subunits=a.ip3r_subunits, ryr_off=a.ryr_off, plc=a.plc,
+        equilibrate_first=a.equilibrate_first)
 
 
 if __name__ == "__main__":

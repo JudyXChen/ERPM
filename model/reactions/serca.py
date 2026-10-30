@@ -8,7 +8,7 @@ dimensionless = unit.dimensionless
 D_unit = um**2 / sec
 
 
-def register(p):
+def _register(p, leak_name):
     species = [
         Species("Sx", 1.0, dimensionless, 0.0, D_unit, "ERm"),
         Species("Sx1", 0.0, dimensionless, 0.0, D_unit, "ERm"),
@@ -31,7 +31,7 @@ def register(p):
         Parameter("k_y0y1", p.k_y0y1, dimensionless),
         Parameter("k_y0x0", p.k_y0x0, dimensionless),
         Parameter("k_x0y0", p.k_x0y0, dimensionless),
-        Parameter("k_S_leak", p.k_S_leak, dimensionless),
+        Parameter(leak_name, getattr(p, leak_name), dimensionless),
     ]
 
     erm = "ERm"
@@ -99,7 +99,7 @@ def register(p):
         # ER -> cyto passive leak. 
         Reaction(
             "S_leak", ["Ca_ER"], ["Ca_c"],
-            param_map={"k": "k_S_leak"},
+            param_map={"k": leak_name},
             eqn_f_str="k*Ca_ER",
             species_map={"Ca_ER": "Ca_ER", "Ca_c": "Ca_c"},
             flux_scaling={"Ca_ER": 1.0,
@@ -109,3 +109,13 @@ def register(p):
     ]
 
     return species, params, reactions
+
+
+def register(p):
+    """Legacy SERCA/leak block."""
+    return _register(p, "k_S_leak")
+
+
+def register_gq(p):
+    """SERCA block using the separately calibrated Gq-pathway leak."""
+    return _register(p, "k_S_leak_gq")

@@ -16,7 +16,7 @@ from smart.model_assembly import (
 )
 from smart.units import unit
 
-from .reactions import REGISTRARS
+from .reactions import registrars_for
 
 sec = unit.second
 um = unit.micrometer
@@ -101,6 +101,7 @@ def build_model(
     final_t=0.1,
     initial_dt=1e-4,
     time_precision=6,
+    plc="new",
 ):
     cc = build_compartments()
     pc = ParameterContainer()
@@ -113,7 +114,7 @@ def build_model(
     seen_species = set()
     seen_reactions = set()
 
-    for register in REGISTRARS:
+    for register in registrars_for(plc=plc):
         species_list, params_list, reactions_list = register(p)
         for par in params_list:
             if par.name in seen_params:
@@ -167,10 +168,10 @@ def build_model(
     return m, {"config": cfg, "parent_mesh": parent_mesh}
 
 
-def species_names(p=None):
+def species_names(p=None, plc="new"):
     """Ordered, de-duplicated list of state-variable names.
 
-    Assembled from ``REGISTRARS`` without building the mesh/model, so it is
+    Assembled from the selected registrars without building the mesh/model, so it is
     cheap to call (e.g. for indexing result traces).
     """
     if p is None:
@@ -180,7 +181,7 @@ def species_names(p=None):
 
     names = []
     seen = set()
-    for register in REGISTRARS:
+    for register in registrars_for(plc=plc):
         species_list, _, _ = register(p)
         for sp in species_list:
             if sp.name not in seen:

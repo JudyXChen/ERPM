@@ -36,13 +36,15 @@ def voltage(times=(0.0,), V_rest=-65.0, tdelaybp=2e-3,
     for t0 in times:
         te = t - t0                # time since EPSP onset (= release time)
         tb = t - t0 - tdelaybp     # time since bAP onset
+        # Clamped so inactive branches of later pulses cannot overflow to NaN.
+        te_pos, tb_pos = sym.Max(te, 0), sym.Max(tb, 0)
         EPSP = sym.Piecewise(
             (0.0, te < 0),
-            (s_term * (sym.exp(-te / tep1) - sym.exp(-te / tep2)), True))
+            (s_term * (sym.exp(-te_pos / tep1) - sym.exp(-te_pos / tep2)), True))
         BPAP = sym.Piecewise(
             (0.0, tb < 0),
-            (maxBPAP * (Ibsf * sym.exp(-tb / tbsf)
-                        + Ibss * sym.exp(-tb / tbss)), True))
+            (maxBPAP * (Ibsf * sym.exp(-tb_pos / tbsf)
+                        + Ibss * sym.exp(-tb_pos / tbss)), True))
         pulse_v = EPSP + BPAP
         if sum_pulses:
             v += pulse_v

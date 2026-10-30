@@ -5,7 +5,6 @@ import sys
 
 sys.setrecursionlimit(100_000)
 
-from .ode_system import build_model
 from .parameters import default_parameters
 from . import stimulus
 
@@ -25,7 +24,9 @@ def _scalar(species):
 
 def run(glu="glut_release", v_rest=-65.0, clamp_mV=None, final_t=0.5,
         out="results/hm_constant", initial_dt=1e-4, outer_radius=0.25,
-        inner_radius=0.1, h_edge=0.05):
+        inner_radius=0.1, h_edge=0.05, plc="new"):
+    from .ode_system import build_model
+
     p = default_parameters()
 
     # glutamate: a single bolus delivered as the initial Glu concentration
@@ -46,6 +47,7 @@ def run(glu="glut_release", v_rest=-65.0, clamp_mV=None, final_t=0.5,
     m, _ = build_model(
         p, voltage_expr=voltage_expr, final_t=final_t, initial_dt=initial_dt,
         outer_radius=outer_radius, inner_radius=inner_radius, h_edge=h_edge,
+        plc=plc,
     )
 
     names = [n for n, _ in m.sc.items]
@@ -79,6 +81,7 @@ def run(glu="glut_release", v_rest=-65.0, clamp_mV=None, final_t=0.5,
               else f"transient (V_rest={v_rest} mV)")
     print(f"\nWrote {len(rows)} timepoints x {len(names)} species -> {csv_path}")
     print(f"Stimulus: Glu_init = {p.Glu_init:.3e} M, V_m = {v_desc}")
+    print(f"PLC: {plc}")
     for sp, lo_is_drop in (("Ca_c", False), ("Ca_ER", True)):
         if sp in names:
             tr = trace(sp)
@@ -108,11 +111,13 @@ def main(argv=None):
                     dest="outer_radius")
     ap.add_argument("--inner-radius", type=float, default=0.1,
                     dest="inner_radius")
+    ap.add_argument("--plc", choices=("old", "new"), default="new",
+                    help="PLC pathway implementation (default: new)")
     a = ap.parse_args(argv)
     glu = None if a.glu == "none" else a.glu
     run(glu=glu, v_rest=a.v_rest, clamp_mV=a.clamp, final_t=a.final_t,
         out=a.out, initial_dt=a.initial_dt, h_edge=a.h_edge,
-        outer_radius=a.outer_radius, inner_radius=a.inner_radius)
+        outer_radius=a.outer_radius, inner_radius=a.inner_radius, plc=a.plc)
 
 
 if __name__ == "__main__":

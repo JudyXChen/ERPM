@@ -37,6 +37,7 @@ def default_parameters():
         V_spine=V_spine_um3,
         V_ER=V_ER_um3,
         V_spine_L=V_spine_L,
+        A_PM=A_PM_um2,
         # Initial concentrations / extracellular (M)
         Ca_c_init=1.0e-7,
         Ca_ER_init=150e-6,
@@ -99,13 +100,14 @@ def default_parameters():
         gamma_VSCC=3.72e-12,
 
         # PMCA / NCX (Table 5, Bartol 2015)
-        k_P1=1.5e8, k_P2=15.0, k_P3=12.0, k_P_leak=4.3,
-        k_NCX1=3.0e8, k_NCX2=300.0, k_NCX3=600.0, k_NCX_leak=19.4,
+        k_P1=1.5e8, k_P2=15.0, k_P3=12.0,
+        k_P_leak=7.0485763929936835,  # scripts/calibrate_rest.py; Bartol's 4.3 is per total pump.
+        k_NCX1=3.0e8, k_NCX2=300.0, k_NCX3=600.0,
+        k_NCX_leak=21.14572917898105,  # scripts/calibrate_rest.py; Bartol's 19.4 is per total pump.
 
         # SOCE
-        # Half-activation store concentration (200 uM, expressed in M).
-        K_STIM1=200e-6,
-        tau_STIM1=0.01,
+        K_STIM1=37.5e-6,  # Francis SI: 0.25 * 150 uM resting store.
+        tau_STIM1=5.0,  # Effective seconds-scale recruitment.
         w_STIM1=1.0,
         N_Orai1=10.0,
         g_Orai1=4.752e-15, # single-channel conductance, S
@@ -122,9 +124,11 @@ def default_parameters():
         k_y0x0=50.0, k_x0y0=0.15,
         # Leak rate to balance the pump at rest.
         k_S_leak=0, # 0.1873,
+        # Separate leak for the Gq-PLC pathway.
+        k_S_leak_gq=0.15248167875230853,  # scripts/calibrate_rest.py: Ca_c 100 nM, ER 150 uM.
 
         # RyR (Table 6, Tanskanen 2007 / Singh 2021)
-        k_AB=3.0e7, k_AU=333.0,
+        k_AB=3.0e7, k_AU=60.0,  # Provisional bulk-Ca affinity Kd=2 uM; original=333.
         k_IC=4.5e5, k_IO=2.5e5, k_IU=1.0,
         alpha_RyR=650.0, beta_RyR=60.0,
         delta_prime=600.0, delta_RyR=75.0, gamma_RyR=5.0,
@@ -150,6 +154,26 @@ def default_parameters():
         k_PLC_fCa=3.0e6, k_PLC_bCa=1.0,
         k_PLC_fP=25.0, k_PLC_bP=10.0,
         k_f=0.155, k_deg=0.28,
+
+
+        plc_gq_kf7=0.15, plc_gq_kr7=0.0,
+        plc_gq_kf8=0.042, plc_gq_kr8=1.0,
+        plc_gq_kf9=4.18e-3 * 1e6, plc_gq_kr9=0.0167,
+        plc_gq_kf10=0.042, plc_gq_kr10=1.0,
+        plc_gq_kf11=4.18e-3 * 1e6, plc_gq_kr11=0.0167,  # = R9: independent Ca/Gq sites close the binding cycle (Calizo: 3.34e4, 0.00334).
+        plc_gq_kf12=6.0, plc_gq_kr12=0.0,
+        plc_gq_kf13=6.0, plc_gq_kr13=0.0,
+        plc_gq_kcat14=10.0, plc_gq_km14=653.0,
+        plc_gq_kcat15=0.333, plc_gq_km15=2587.0,
+        plc_gq_pip2_density=4000.0,  # molecules/um2, fixed reservoir.
+        plc_gq_total_density=10047.8611584221,
+        plc_gq_k16=0.125,
+        plc_gq_r15_scale=0.38157369819818043,
+
+        plc_gq_eta=1.0,
+        plc_gq_k_act=1.291678304,  # s^-1
+        plc_gq_plc_ca_fraction=0.02441874050706858,
+
     )
 
 
