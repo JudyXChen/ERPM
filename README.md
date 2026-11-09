@@ -8,20 +8,20 @@ conda activate erpm
 ## Run the model
 
 ```bash
-python -m model.ode0d --soce --equilibrate-first --final-t 60 --n-points 6001 --out results/ode0d
-python scripts/plot_ode0d.py results/ode0d --t-max-ms 60000 --x-unit s
+python -m model.ode0d --soce --eqm --final-t 60 --out results/ode0d
+python scripts/plot_ode0d.py results/ode0d
 ```
 
 This runs one condition (RyR on, SOCE on) and matches the same condition in
-`run_conditions.py`. Both flags matter:
+`run_conditions.py` (Ca_c peak 8.2 µM, ER minimum 20.1 µM).
 
-- **`--equilibrate-first`:** the default initial state is not a steady state.
-  Without this flag, `Ca_ER` falls from 150 to about 110 µM over 8 s with no
-  stimulus, and that drift hides the real response.
-- **`--n-points 6001`:** samples are evenly spaced. The default 200 points over
-  60 s are 0.3 s apart, so they miss the 50 ms ER minimum and the cytosolic peak.
-  At 10 ms spacing `Ca_c` still peaks low (6.3 vs 7.4 µM), so use
-  `scripts/run_conditions.py` when the `Ca_c` peak matters.
+- **Use `--eqm`.** The default initial state is not a steady state. Without it,
+  `Ca_ER` falls from 150 to about 110 µM over 8 s with no stimulus, and that drift
+  hides the real response.
+- **Output times are chosen automatically**, using the same grid as
+  `run_conditions.py`: every 10 µs for 100 ms after each release (resolving the
+  cytosolic peak and the ~50 ms ER minimum), then 2 ms to 10 s, 20 ms to 60 s and
+  0.1 s after. A 60 s run writes ~17,500 rows (~58 MB).
 
 To regenerate the full four-condition result set, including the
 figures:
@@ -45,20 +45,19 @@ SOCE off; Ca_ER 155.5 µM and Ca_c 108.6 nM with SOCE on.
 | `--glu-freq HZ` | `1.0` | release frequency (Hz) within a pulse train |
 | `--glu-molecules N` | `500` | molecules per bolus (→ spine concentration) |
 | `--t-stim S` | `0.0` | time (s) of the first glutamate release |
-| `--v-rest MV` | `-65.0` | resting V_m; each release adds an EPSP+bAP on top |
 | `--clamp MV` | *(off)* | hold V_m at a constant clamp instead of the transient |
-| `--soce` | off | include STIM/Orai1 SOCE |
-| `--ryroff` | off | remove the RyR block |
-| `--ip3r-subunits` | off | explicit 3-subunit IP3R (24 states) vs cubed P_open |
+| `--soce [on\|off]` | `off` | STIM1/Orai1 SOCE; bare `--soce` means on |
+| `--ryr [on\|off]` | `on` | RyR block; `--ryr off` removes its states and CICR flux |
 | `--plc {old,new}` | `new` | select the Gq or legacy PLC pathway |
-| `--equilibrate-first` | off | converge at zero stimulus before the run |
+| `--eqm` | off | equilibrate at zero stimulus before the run |
 | `--final-t S` | `0.5` | integration length (s) |
-| `--n-points N` | `200` | output samples, evenly spaced |
 | `--out DIR` | `results/ode0d` | writes `traces.csv` here |
 | `--set KEY=VAL` | — | override any model parameter, repeatable (e.g. `--set N_Orai1=50`) |
 
 The solver is fixed to `BDF`. Glutamate delivery is a single train of
-`--glu-pulses` releases at `--glu-freq`, starting at `--t-stim`.
+`--glu-pulses` releases at `--glu-freq`, starting at `--t-stim`. V_rest is fixed at
+−65 mV (`model.stimulus.V_REST`); each release adds an EPSP+bAP on top. IP3R gating
+uses one 8-state subunit with P_open = `IPR_110`³.
 
 ## Scripts
 
@@ -96,19 +95,23 @@ python scripts/run_conditions.py --tag sercaBartol_soceFast_6pulses_0.2Hz --glu-
 release, and the time to 50, 90, 95 and 99% recovery from the minimum after the last
 release. Each release is 500 glutamate molecules plus an EPSP+bAP, the first at t = 0.
 Runs simulate 300 s and stop with an error if the flux budget does not close. Trains
-also write `Ca_c_nM_<T>s.png`, covering the whole train.
+also write `ca_cyto_<T>s.png`, covering the whole train. Figure names are listed in
+`results/README.md`.
 
 ### `plot_ode0d.py`
 
-`python scripts/plot_ode0d.py [out_dir] [flags]` writes `Ca_cyto.png`,
-`Ca_cyto_norm.png`, `Ca_ER.png`, `stimulus_glu.png`, `stimulus_voltage.png` and
+`python scripts/plot_ode0d.py [out_dir] [flags]` writes `ca_cyto.png`,
+`ca_cyto_norm.png`, `ca_er.png`, `stimulus_glu.png`, `stimulus_voltage.png` and
 `open_channels_summary.csv`.
 
 | Flag | Default | Meaning |
 |---|---|---|
 | `out_dir` (positional) | `results/ode0d` | directory holding `traces.csv` |
-| `--t-min-ms` / `--t-max-ms` | `0` / `50` | plotted time window (**always in ms**, even with `--x-unit s`) |
-| `--x-unit {ms,s}` | `ms` | x-axis display unit |
+| `--t-min S` / `--t-max S` | `0` / end of run | plotted time window, in seconds |
+
+The time axis is in ms for windows shorter than 1 s and in s otherwise. All figures
+follow this rule (`plot_style.time_unit`): fast cytosolic panels (100 ms) in ms, ER,
+receptor and IP3 panels (seconds) in s.
 
 ### `er_flux_decomp.py`
 
@@ -117,13 +120,13 @@ supplies the filename prefix, and numerical flux data use the same prefix as a C
 
 | Flag | Default | Meaning |
 |---|---|---|
-| `--final-t` / `--n-points` | `2.0` / `16000` | window and sampling |
+| `--final-t S` | `2.0` | integration length; sampling is automatic, as in `model.ode0d` |
 | `--glu-molecules` | `0.0` | single bolus at t=0 (`0` = no stimulus) |
 | `--stim` | off | drive with the EPSP+bAP voltage transient |
 | `--plc {old,new}` | `new` | choose the PLC pathway |
-| `--equilibrate-first` | off | converge the resting state before the run |
-| `--ryroff`, `--ip3r-off` | off | remove the RyR or IP3R block |
-| `--soce`, `--v-rest`, `--out`, `--data-out` | — | SOCE, resting V_m, and output paths |
+| `--eqm` | off | equilibrate the resting state before the run |
+| `--soce [on\|off]` / `--ryr [on\|off]` / `--ip3r [on\|off]` | `off` / `on` / `on` | include or remove each block |
+| `--out`, `--data-out` | `results/Flux/standalone/budget.png` | output paths |
 
 ### Resting calibration
 
@@ -147,9 +150,9 @@ balances R16 decay. The legacy pathway remains available with `--plc old`, where
 `IP3_basal` is balanced by `IP3_basal_source` and `IP3_decay`.
 
 ```bash
-python -m model.ode0d --plc new --equilibrate-first --ryroff --final-t 2
+python -m model.ode0d --eqm --ryr off --final-t 2
 python scripts/plc_gq_analysis.py
-python scripts/er_flux_decomp.py --plc new --equilibrate-first --ryroff
+python scripts/er_flux_decomp.py --eqm --ryr off
 ```
 
 `python scripts/plc_gq_analysis.py --ip3-budget` traces IP3 production (R14, R15) against
