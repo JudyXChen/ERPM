@@ -24,10 +24,22 @@ V_spine_L = V_spine_um3 * 1e-15
 V_ER_L = V_ER_um3 * 1e-15
 
 
+def balanced_r15_scale(p):
+    """R15 scale (s15) that balances R16 decay at the resting IP3 (IP3_basal).
+
+    k16*IP3_basal = s15*kcat15*PLC_Ca*PIP2/(Km15+PIP2)*A_PM/(N_A*V_spine_L)
+    """
+    pip2 = p.plc_gq_pip2_density
+    plc_ca = (p.N_PLC / p.A_PM) * p.plc_gq_plc_ca_fraction
+    production = (p.plc_gq_kcat15 * plc_ca * pip2 / (p.plc_gq_km15 + pip2)
+                  * p.A_PM / (p.N_A * p.V_spine_L))
+    return p.plc_gq_k16 * p.IP3_basal / production
+
+
 def default_parameters():
     Bf_total = 4791.0 / (N_A * V_spine_L)
 
-    return SimpleNamespace(
+    p = SimpleNamespace(
         # Physical constants
         N_A=N_A,
         F_const=F_const,
@@ -107,25 +119,27 @@ def default_parameters():
 
         # SOCE
         K_STIM1=60e-6,  # About 0.42 * rest, the ratio in Luik 2008 (169 uM at 400 uM ER).
-        tau_STIM1=5.0,  # Effective seconds-scale recruitment.
+        tau_STIM1=0.01,  # tau_SOCE, Francis 2026 (muscle), assumes STIM1-Orai1 already assembled at junctions.
         w_STIM1=1.0,
         N_Orai1=10.0,
-        g_Orai1=4.752e-15, # single-channel conductance, S
+        g_Orai1=4.752e-14 * A_PM_um2 / 10.0,  # S per channel: Francis 2026 density (S/um2) * A_PM / N_Orai1.
 
         # SERCA (Table 6, Bartol 2015)
-        k_x0x1=2.0e8, k_x1x0=83.7,
-        k_x1x2=1.0e8, k_x2x1=167.4,
-        # Conformational steps recalibrated for SERCA2b turnover.
-        # k_x2y2=0.6, k_y2x2=0.097 (Bartol)
-        k_x2y2=50.0, k_y2x2=8.083,
+        # Bartol 2015 Table 1 (Higgins 2006 at s = 1), with k_y2x2 = 0.97 (Higgins; Bartol lists 0.097) and two factors,
+        # fitted at ER Ca = 0: s = 33.86 for turnover 5 cycles/s, g = 4.74 for K1/2 0.27 uM (Lytton 1992).
+        # Off-rates / g: 83.7, 167.4.
+        k_x0x1=2.0e8, k_x1x0=17.66,
+        k_x1x2=1.0e8, k_x2x1=35.32,
+        # 0.6 s, 0.97 s.
+        k_x2y2=20.31, k_y2x2=32.84,
         k_y2y1=60.04, k_y1y2=1.0e5,
         k_y1y0=30.02, k_y0y1=2.0e5,
-        # k_y0x0=0.4, k_x0y0=1.2e-3 (Bartol)
-        k_y0x0=50.0, k_x0y0=0.15,
-        # Leak rate to balance the pump at rest.
+        # 0.4 s, 1.2e-3 s.
+        k_y0x0=13.54, k_x0y0=0.04063,
+        # Leak rate to balance the pump at rest. Not used in Gq-PLC version of model.
         k_S_leak=0, # 0.1873,
         # Separate leak for the Gq-PLC pathway.
-        k_S_leak_gq=0.13107465373670635,  # scripts/calibrate_rest.py: Ca_c 100 nM, ER 150 uM.
+        k_S_leak_gq=0.3349166725925168,  # scripts/calibrate_rest.py: Ca_c 100 nM, ER 150 uM.
 
         # RyR (Table 6, Tanskanen 2007 / Singh 2021)
         k_AB=3.0e7, k_AU=333.0,
@@ -148,7 +162,7 @@ def default_parameters():
         k_d=50.0, # Optimization to derive
 
         # mGluR / PLC / IP3 cascade (Table 7, Singh 2021)
-        k_mG_f=1.0e8, k_mG_b=7.85,
+        k_mG_f=1.0e8, k_mG_b=78.5,  # Fitted to IP3 timing, x10 of Singh 2021 (7.85); also used by --plc old.
         k_GG_f=2.0e6, k_GG_b=15.7,
         k_IP=0.03875, k_IP_2=0.0775,
         k_PLC_fCa=3.0e6, k_PLC_bCa=1.0,
@@ -156,25 +170,26 @@ def default_parameters():
         k_f=0.155, k_deg=0.28,
 
 
-        plc_gq_kf7=0.15, plc_gq_kr7=0.0,
+        plc_gq_kf7=0.15,
         plc_gq_kf8=0.042, plc_gq_kr8=1.0,
         plc_gq_kf9=4.18e-3 * 1e6, plc_gq_kr9=0.0167,
         plc_gq_kf10=0.042, plc_gq_kr10=1.0,
         plc_gq_kf11=4.18e-3 * 1e6, plc_gq_kr11=0.0167,  # = R9: independent Ca/Gq sites close the binding cycle (Calizo: 3.34e4, 0.00334).
-        plc_gq_kf12=6.0, plc_gq_kr12=0.0,
-        plc_gq_kf13=6.0, plc_gq_kr13=0.0,
-        plc_gq_kcat14=10.0, plc_gq_km14=653.0,
+        plc_gq_kf12=6.0,
+        plc_gq_kf13=6.0,
+        plc_gq_kcat14=50.0, plc_gq_km14=653.0,  # kcat fitted to IP3 timing, x5 of Calizo (10).
+       
         plc_gq_kcat15=0.333, plc_gq_km15=2587.0,
         plc_gq_pip2_density=4000.0,  # molecules/um2, fixed reservoir.
         plc_gq_total_density=10047.8611584221,
-        plc_gq_k16=0.5,  # Effective: metabolism (0.125, Calizo) plus estimated diffusion out of the segment.
-        plc_gq_r15_scale=3.8157369824006895,
+        plc_gq_k16=0.28,  # k_deg, Singh 2021 (Calizo 0.125).
 
         plc_gq_eta=1.0,
-        plc_gq_k_act=1.291678304,  # s^-1
+        plc_gq_k_act=1.291678304,  # s^-1; Calizo Kfr5 22.2 * (N_mGluR/A_PM) / Gq_total, not a fit.
         plc_gq_plc_ca_fraction=0.02441874050706858,
-
     )
+    p.plc_gq_r15_scale = balanced_r15_scale(p)  # Keeps rest at IP3_basal.
+    return p
 
 
 DEFAULTS = default_parameters()

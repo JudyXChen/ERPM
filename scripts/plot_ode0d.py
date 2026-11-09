@@ -43,27 +43,18 @@ def plot_one(out_dir, t_axis, y, filename, ylabel, color, scale=1.0,
     plot_style.format_axis(ax)
     fig.tight_layout()
     path = out_dir / filename
-    fig.savefig(path)
-    plt.close(fig)
+    plot_style.save(fig, path)
     return path
 
 
 def plot_stimulus(out_dir, t_axis, vm, glu, xlabel="t (ms)"):
-    """V_m and glutamate as two stacked subplots in stimulus.png."""
-    w, h = plot_style.FIGSIZE
-    fig, (ax_g, ax_v) = plt.subplots(
-        2, 1, sharex=True, figsize=(w, 1.6 * h))
-    ax_g.plot(t_axis, glu * UM, color=plot_style.color_for("Glu"))
-    ax_g.set(ylabel="Glu (µM)")
-    ax_v.plot(t_axis, vm, color=plot_style.color_for("V_m"))
-    ax_v.set(xlabel=xlabel, ylabel="V_m (mV)")
-    for ax in (ax_g, ax_v):
-        plot_style.format_axis(ax)
-    fig.tight_layout()
-    path = out_dir / "stimulus.png"
-    fig.savefig(path)
-    plt.close(fig)
-    return path
+    """Separate voltage and glutamate panels with fixed manuscript dimensions."""
+    return [
+        plot_one(out_dir, t_axis, glu, "stimulus_glu.png", "Glu (µM)",
+                 plot_style.color_for("Glu"), scale=UM, xlabel=xlabel),
+        plot_one(out_dir, t_axis, vm, "stimulus_voltage.png", "V_m (mV)",
+                 plot_style.color_for("V_m"), xlabel=xlabel),
+    ]
 
 
 def _open_channel_series(col):
@@ -149,7 +140,7 @@ def _time_window(col, t_min_ms, t_max_ms):
     return t_ms[mask], mask
 
 
-def main(out_dir, t_min_ms=0.0, t_max_ms=50.0, x_unit="ms"):
+def main(out_dir, t_min_ms=0.0, t_max_ms=50.0, x_unit="ms", *, write_tables=True):
     out_dir = pathlib.Path(out_dir)
     _header, col = load(out_dir / "traces.csv")
     t_ms, plot_mask = _time_window(col, t_min_ms, t_max_ms)
@@ -159,7 +150,7 @@ def main(out_dir, t_min_ms=0.0, t_max_ms=50.0, x_unit="ms"):
 
     written = []
     if "V_m" in col and "Glu" in col:
-        written.append(
+        written.extend(
             plot_stimulus(out_dir, t_axis, col["V_m"][plot_mask],
                           col["Glu"][plot_mask], xlabel=xlabel)
         )
@@ -186,7 +177,8 @@ def main(out_dir, t_min_ms=0.0, t_max_ms=50.0, x_unit="ms"):
                      scale=UM, xlabel=xlabel)
         )
 
-    written.extend(write_open_channel_tables(out_dir, col))
+    if write_tables:
+        written.extend(write_open_channel_tables(out_dir, col))
     # written.extend(write_ca_ions_summary(out_dir, col))
     print("wrote " + ", ".join(str(path) for path in written))
 

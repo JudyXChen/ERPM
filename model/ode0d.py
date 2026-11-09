@@ -11,7 +11,7 @@ import sympy as sym
 from scipy.integrate import solve_ivp
 from sympy.parsing.sympy_parser import parse_expr
 
-from .parameters import default_parameters
+from .parameters import balanced_r15_scale, default_parameters
 
 
 def _install_smart_stub():
@@ -343,6 +343,8 @@ def run(glu_freq=1.0, glu_pulses=1, glu_molecules=stimulus.GLUT_BOLUS_MOLECULES,
         for k, v in param_overrides.items():
             setattr(p, k, float(v))
         p.V_spine_L = float(p.V_spine) * 1e-15
+        if "plc_gq_r15_scale" not in param_overrides:
+            p.plc_gq_r15_scale = balanced_r15_scale(p)
 
     # --- glutamate: a single train of identical pulse resets starting at
     # t_stim -- glu_pulses releases at glu_freq.
